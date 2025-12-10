@@ -29,7 +29,8 @@ Perfect! Now I have comprehensive information about Kafka Streams patterns, team
 10. [Incident Management Process](#incident-management-process)
 11. [Post-Incident Review (Postmortem)](#post-incident-review-postmortem)
 12. [Tools & Integration Recommendations](#tools--integration-recommendations)
-13. [Knowledge Documentation Standards](#knowledge-documentation-standards)
+13. [Secure Git Data Practices](#secure-git-data-practices)
+14. [Knowledge Documentation Standards](#knowledge-documentation-standards)
 
 ***
 
@@ -2113,6 +2114,740 @@ public PaymentResult processPayment(PaymentRequest request) {
 - Limited PagerDuty: Paired with Platform for on-call (lighter rotation)
 - Admin access: api-gateway, web-frontend repos
 - Read-only: All service repos (for API integration)
+
+***
+
+## Secure Git Data Practices
+
+### Critical Rules: Never Commit Sensitive Data
+
+**What NEVER Goes in Git:**
+
+| **Type** | **Examples** | **Risk Level** |
+|----------|-------------|----------------|
+| **API Keys** | Stripe API keys, AWS access keys, Google Maps API keys | 🔴 Critical |
+| **Credentials** | Database passwords, service account passwords, OAuth secrets | 🔴 Critical |
+| **Private Keys** | SSH private keys, SSL/TLS certificates, signing keys | 🔴 Critical |
+| **Tokens** | JWT secrets, OAuth tokens, access tokens, refresh tokens | 🔴 Critical |
+| **Connection Strings** | Database connection strings with passwords, Redis URLs with auth | 🔴 Critical |
+| **Environment-Specific Config** | Production database URLs, production API endpoints | 🟡 High |
+| **Secrets Files** | `.env` files, `secrets.yaml`, `credentials.json` | 🔴 Critical |
+| **Hardcoded Credentials** | Any passwords, keys, or tokens in source code | 🔴 Critical |
+
+**Why This Matters:**
+
+- **Git History is Permanent**: Even if you delete a file, it remains in git history forever
+- **Public Repos**: Accidental public exposure exposes all historical commits
+- **Compliance**: GDPR, PCI-DSS, SOC 2 require strict credential management
+- **Security Breaches**: Leaked credentials can lead to data breaches, financial loss, reputation damage
+
+### Backend Best Practices (Java Microservices)
+
+#### 1. Use Environment Variables
+
+**Never do this:**
+```java
+// ❌ BAD: Hardcoded credentials
+public class PaymentService {
+    private static final String STRIPE_API_KEY = "sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz";
+    private static final String DB_PASSWORD = "mySecretPassword123";
+}
+```
+
+**Do this instead:**
+```java
+// ✅ GOOD: Environment variables
+@Configuration
+public class PaymentConfig {
+    @Value("${stripe.api.key}")
+    private String stripeApiKey;
+    
+    @Value("${database.password}")
+    private String dbPassword;
+}
+```
+
+**Application Properties (`application.yml`):**
+```yaml
+# ✅ GOOD: Reference environment variables
+stripe:
+  api:
+    key: ${STRIPE_API_KEY}
+
+database:
+  password: ${DB_PASSWORD}
+  url: ${DB_URL:jdbc:postgresql://localhost:5432/mydb}
+```
+
+#### 2. Use Spring Cloud Config or Kubernetes Secrets
+
+**Spring Cloud Config Server (`application.yml`):**
+```yaml
+# config-server/application.yml
+spring:
+  cloud:
+    config:
+      server:
+        git:
+          uri: ${CONFIG_REPO_URL}
+          search-paths: '{application}'
+          default-label: main
+```
+
+**Kubernetes Secret (for production):**
+```yaml
+# k8s/secrets/payment-service-secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: payment-service-secrets
+  namespace: production
+type: Opaque
+stringData:
+  stripe-api-key: "sk_live_..."
+  db-password: "secure-password"
+```
+
+**Deployment references secret:**
+```yaml
+# k8s/deployments/payment-service.yaml
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: payment-service
+        env:
+        - name: STRIPE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: payment-service-secrets
+              key: stripe-api-key
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: payment-service-secrets
+              key: db-password
+```
+
+#### 3. Use `.gitignore` for Local Development
+
+**`.gitignore` (Java/Spring Boot):**
+```gitignore
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Configuration with secrets
+application-local.yml
+application-prod.yml
+application-secrets.yml
+config/local.properties
+config/secrets.properties
+
+# IDE files (may contain paths)
+.idea/
+.vscode/
+*.iml
+
+# Logs (may contain sensitive data)
+logs/
+*.log
+
+# Build artifacts
+target/
+build/
+*.class
+*.jar
+*.war
+
+# Temporary files
+*.tmp
+*.swp
+*.bak
+```
+
+#### 4. Use `.env.example` Template
+
+**Create `.env.example` (committed to git):**
+```bash
+# .env.example
+# Copy this file to .env and fill in your values
+# DO NOT commit .env to git
+
+# Stripe API Keys
+STRIPE_API_KEY=sk_test_your_key_here
+STRIPE_PUBLISHABLE_KEY=pk_test_your_key_here
+
+# Database
+DB_URL=jdbc:postgresql://localhost:5432/mydb
+DB_USERNAME=your_username
+DB_PASSWORD=your_password
+
+# JWT Secrets
+JWT_SECRET=your_jwt_secret_here
+JWT_EXPIRATION=86400000
+
+# External Services
+AWS_ACCESS_KEY_ID=your_aws_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret
+AWS_REGION=us-east-1
+```
+
+**README.md instructions:**
+```markdown
+## Local Development Setup
+
+1. Copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Fill in your local credentials in `.env`
+
+3. Never commit `.env` to git (already in `.gitignore`)
+```
+
+#### 5. Use Secrets Management Tools
+
+**For Production:**
+- **AWS Secrets Manager**: Store secrets in AWS, rotate automatically
+- **HashiCorp Vault**: Centralized secrets management
+- **Azure Key Vault**: Microsoft Azure secrets storage
+- **Google Secret Manager**: GCP secrets management
+
+**Example with AWS Secrets Manager:**
+```java
+// ✅ GOOD: Fetch from AWS Secrets Manager
+@Service
+public class SecretsService {
+    @Autowired
+    private AWSSecretsManager secretsManager;
+    
+    public String getStripeApiKey() {
+        GetSecretValueRequest request = new GetSecretValueRequest()
+            .withSecretId("payment-service/stripe-api-key");
+        GetSecretValueResult result = secretsManager.getSecretValue(request);
+        return result.getSecretString();
+    }
+}
+```
+
+### Frontend Best Practices (Web Applications)
+
+#### 1. Never Commit API Keys in Frontend Code
+
+**Never do this:**
+```javascript
+// ❌ BAD: Hardcoded API key in frontend
+const GOOGLE_MAPS_API_KEY = "AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYz123456";
+const STRIPE_PUBLISHABLE_KEY = "pk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz";
+```
+
+**Do this instead:**
+```javascript
+// ✅ GOOD: Environment variables (build-time)
+const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+const STRIPE_PUBLISHABLE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
+```
+
+**Note:** Frontend environment variables are embedded in the build, so only use **public** keys (like Stripe publishable keys). Never use **secret** keys in frontend code.
+
+#### 2. Use Environment Variables (Build-Time)
+
+**`.env.local` (not committed):**
+```bash
+# .env.local
+REACT_APP_GOOGLE_MAPS_API_KEY=AIzaSy...
+REACT_APP_STRIPE_PUBLISHABLE_KEY=pk_test_...
+REACT_APP_API_BASE_URL=https://api.example.com
+```
+
+**`.env.example` (committed):**
+```bash
+# .env.example
+REACT_APP_GOOGLE_MAPS_API_KEY=your_google_maps_key_here
+REACT_APP_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key_here
+REACT_APP_API_BASE_URL=https://api-staging.example.com
+```
+
+**`.gitignore`:**
+```gitignore
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.production.local
+.env.development.local
+```
+
+#### 3. Use Backend Proxy for Secret Keys
+
+**For secret operations, proxy through backend:**
+```javascript
+// ✅ GOOD: Secret operations go through backend
+// Frontend calls backend API, backend uses secret key
+async function processPayment(paymentData) {
+  const response = await fetch('/api/payments/process', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(paymentData)
+  });
+  return response.json();
+}
+
+// Backend (Java) uses secret Stripe key:
+@RestController
+@RequestMapping("/api/payments")
+public class PaymentController {
+    @Value("${stripe.secret.key}")  // From environment variable
+    private String stripeSecretKey;
+    
+    @PostMapping("/process")
+    public PaymentResult processPayment(@RequestBody PaymentRequest request) {
+        // Use secret key server-side only
+        Stripe.apiKey = stripeSecretKey;
+        // Process payment...
+    }
+}
+```
+
+#### 4. Use Runtime Configuration for Different Environments
+
+**For React apps, use `public/config.js`:**
+```javascript
+// public/config.js (loaded at runtime)
+window.APP_CONFIG = {
+  apiBaseUrl: 'https://api.example.com',
+  googleMapsApiKey: 'AIzaSy...',
+  stripePublishableKey: 'pk_test_...'
+};
+```
+
+**Load in `index.html`:**
+```html
+<!-- index.html -->
+<script src="%PUBLIC_URL%/config.js"></script>
+<script>
+  // Override with environment-specific config
+  if (process.env.REACT_APP_ENV === 'production') {
+    window.APP_CONFIG = {
+      apiBaseUrl: 'https://api.example.com',
+      // ... production config
+    };
+  }
+</script>
+```
+
+### Mobile App Best Practices (iOS/Android)
+
+#### 1. iOS: Use Xcode Build Configurations
+
+**Never do this:**
+```swift
+// ❌ BAD: Hardcoded API key
+let apiKey = "sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz"
+```
+
+**Do this instead:**
+```swift
+// ✅ GOOD: Build configuration
+struct Config {
+    static let apiKey: String = {
+        guard let path = Bundle.main.path(forResource: "Config", ofType: "plist"),
+              let plist = NSDictionary(contentsOfFile: path),
+              let apiKey = plist["API_KEY"] as? String else {
+            fatalError("API_KEY not found in Config.plist")
+        }
+        return apiKey
+    }()
+}
+```
+
+**`Config.plist` (not committed, in `.gitignore`):**
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>API_KEY</key>
+    <string>your_api_key_here</string>
+    <key>API_BASE_URL</key>
+    <string>https://api.example.com</string>
+</dict>
+</plist>
+```
+
+**`Config.example.plist` (committed):**
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>API_KEY</key>
+    <string>your_api_key_here</string>
+    <key>API_BASE_URL</key>
+    <string>https://api-staging.example.com</string>
+</dict>
+</plist>
+```
+
+**`.gitignore`:**
+```gitignore
+# iOS
+Config.plist
+*.xcconfig
+*.xcuserdata
+```
+
+#### 2. Android: Use `local.properties` and Build Config
+
+**Never do this:**
+```kotlin
+// ❌ BAD: Hardcoded API key
+val apiKey = "sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz"
+```
+
+**Do this instead:**
+```kotlin
+// ✅ GOOD: BuildConfig field
+class ApiClient {
+    companion object {
+        val apiKey = BuildConfig.API_KEY
+        val apiBaseUrl = BuildConfig.API_BASE_URL
+    }
+}
+```
+
+**`local.properties` (not committed, in `.gitignore`):**
+```properties
+# local.properties
+API_KEY=your_api_key_here
+API_BASE_URL=https://api.example.com
+```
+
+**`build.gradle.kts` (reads from `local.properties`):**
+```kotlin
+// build.gradle.kts
+val localProperties = java.util.Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(java.io.FileInputStream(localPropertiesFile))
+}
+
+android {
+    defaultConfig {
+        buildConfigField("String", "API_KEY", "\"${localProperties.getProperty("API_KEY", "")}\"")
+        buildConfigField("String", "API_BASE_URL", "\"${localProperties.getProperty("API_BASE_URL", "")}\"")
+    }
+}
+```
+
+**`.gitignore`:**
+```gitignore
+# Android
+local.properties
+*.keystore
+*.jks
+```
+
+#### 3. Use Environment-Specific Build Variants
+
+**Android `build.gradle.kts`:**
+```kotlin
+android {
+    buildTypes {
+        getByName("debug") {
+            buildConfigField("String", "API_BASE_URL", "\"https://api-dev.example.com\"")
+        }
+        getByName("release") {
+            buildConfigField("String", "API_BASE_URL", "\"https://api.example.com\"")
+        }
+    }
+    
+    flavorDimensions += "environment"
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+        }
+        create("staging") {
+            dimension = "environment"
+            applicationIdSuffix = ".staging"
+        }
+        create("prod") {
+            dimension = "environment"
+        }
+    }
+}
+```
+
+### Making It Convenient for Local Development
+
+#### 1. Create Setup Scripts
+
+**`scripts/setup-local-dev.sh`:**
+```bash
+#!/bin/bash
+# Setup script for local development
+
+echo "🚀 Setting up local development environment..."
+
+# Backend services
+echo "📦 Setting up backend services..."
+for service in user-service payment-service checkout-service; do
+    if [ ! -f "services/$service/.env" ]; then
+        echo "Creating .env for $service..."
+        cp "services/$service/.env.example" "services/$service/.env"
+        echo "⚠️  Please fill in credentials in services/$service/.env"
+    fi
+done
+
+# Frontend
+echo "🌐 Setting up frontend..."
+if [ ! -f "web-frontend/.env.local" ]; then
+    cp "web-frontend/.env.example" "web-frontend/.env.local"
+    echo "⚠️  Please fill in API keys in web-frontend/.env.local"
+fi
+
+# Mobile iOS
+echo "📱 Setting up iOS..."
+if [ ! -f "mobile-ios/Config.plist" ]; then
+    cp "mobile-ios/Config.example.plist" "mobile-ios/Config.plist"
+    echo "⚠️  Please fill in API keys in mobile-ios/Config.plist"
+fi
+
+# Mobile Android
+echo "🤖 Setting up Android..."
+if [ ! -f "mobile-android/local.properties" ]; then
+    cp "mobile-android/local.properties.example" "mobile-android/local.properties"
+    echo "⚠️  Please fill in API keys in mobile-android/local.properties"
+fi
+
+echo "✅ Setup complete! Please fill in credentials in the generated files."
+```
+
+#### 2. Use Docker Compose with Environment Files
+
+**`docker-compose.local.yml`:**
+```yaml
+version: '3.8'
+services:
+  user-service:
+    build: ./services/user-service
+    env_file:
+      - ./services/user-service/.env.local
+    environment:
+      - DB_URL=${DB_URL:-jdbc:postgresql://db:5432/userdb}
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+  
+  payment-service:
+    build: ./services/payment-service
+    env_file:
+      - ./services/payment-service/.env.local
+    depends_on:
+      - user-service
+  
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+**Run with:**
+```bash
+docker-compose -f docker-compose.local.yml up
+```
+
+#### 3. Use CI/CD Secrets for Different Stages
+
+**GitHub Actions Secrets:**
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy to Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to ${{ github.event.inputs.environment }}
+        env:
+          STRIPE_API_KEY: ${{ secrets[format('STRIPE_API_KEY_{0}', github.event.inputs.environment)] }}
+          DB_PASSWORD: ${{ secrets[format('DB_PASSWORD_{0}', github.event.inputs.environment)] }}
+        run: |
+          # Deployment script
+          echo "Deploying with environment-specific secrets..."
+```
+
+**Secrets in GitHub:**
+- `STRIPE_API_KEY_DEV` → Development Stripe test key
+- `STRIPE_API_KEY_STAGING` → Staging Stripe test key
+- `STRIPE_API_KEY_PRODUCTION` → Production Stripe live key
+
+### Pre-Commit Hooks: Prevent Accidental Commits
+
+#### 1. Install `git-secrets` (AWS Tool)
+
+```bash
+# Install git-secrets
+git clone https://github.com/awslabs/git-secrets.git
+cd git-secrets
+sudo make install
+
+# Configure for your repository
+cd /path/to/your/repo
+git secrets --install
+git secrets --register-aws
+
+# Add custom patterns
+git secrets --add 'sk_live_[A-Za-z0-9]{32,}'
+git secrets --add 'pk_live_[A-Za-z0-9]{32,}'
+git secrets --add 'AIza[0-9A-Za-z_-]{35}'
+```
+
+**Test:**
+```bash
+# This should fail
+echo "STRIPE_API_KEY=sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz" > test.txt
+git add test.txt
+# Error: Potential secrets detected!
+```
+
+#### 2. Use `detect-secrets` (Yelp Tool)
+
+```bash
+# Install
+pip install detect-secrets
+
+# Scan repository
+detect-secrets scan --baseline .secrets.baseline
+
+# Add to pre-commit hook
+detect-secrets-hook --baseline .secrets.baseline
+```
+
+**`.pre-commit-config.yaml`:**
+```yaml
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+```
+
+#### 3. Use `truffleHog` for Historical Scanning
+
+```bash
+# Install
+pip install trufflehog
+
+# Scan git history
+trufflehog git file://. --json
+```
+
+### If Secrets Are Already Committed: Emergency Response
+
+#### 1. Immediate Actions
+
+```bash
+# 1. Rotate ALL exposed credentials immediately
+# - Change API keys in service dashboards
+# - Change database passwords
+# - Revoke OAuth tokens
+# - Regenerate SSH keys
+
+# 2. Remove from git history (if private repo)
+git filter-branch --force --index-filter \
+  "git rm --cached --ignore-unmatch path/to/secret-file" \
+  --prune-empty --tag-name-filter cat -- --all
+
+# 3. Force push (coordinate with team!)
+git push origin --force --all
+git push origin --force --tags
+
+# 4. Notify security team
+```
+
+#### 2. Use `BFG Repo-Cleaner` (Faster Alternative)
+
+```bash
+# Install BFG
+brew install bfg  # macOS
+# or download from https://rtyley.github.io/bfg-repo-cleaner/
+
+# Remove secrets file from history
+bfg --delete-files secret-file.txt
+
+# Remove secrets from all files
+bfg --replace-text passwords.txt  # File with old:new mappings
+
+# Clean up
+git reflog expire --expire=now --all
+git gc --prune=now --aggressive
+```
+
+**⚠️ Warning:** Rewriting git history is destructive. Coordinate with your team and ensure everyone pulls the cleaned history.
+
+### Checklist: Secure Git Practices
+
+**Before Every Commit:**
+- [ ] No API keys, passwords, or tokens in code
+- [ ] No `.env` files committed
+- [ ] No hardcoded credentials
+- [ ] All secrets use environment variables
+- [ ] `.gitignore` includes all secret files
+- [ ] Pre-commit hooks installed and passing
+
+**For New Developers:**
+- [ ] Read this section on secure git practices
+- [ ] Copy `.env.example` to `.env` (don't commit `.env`)
+- [ ] Set up local development environment
+- [ ] Test that app works with environment variables
+- [ ] Understand secrets management for your platform (backend/frontend/mobile)
+
+**For Production Deployments:**
+- [ ] All secrets stored in secure vault (AWS Secrets Manager, Vault, etc.)
+- [ ] Kubernetes secrets created (not in git)
+- [ ] CI/CD uses GitHub/GitLab secrets (not hardcoded)
+- [ ] Secrets rotated regularly (quarterly)
+- [ ] Access to secrets audited and logged
+
+### Tools Summary
+
+| **Tool** | **Purpose** | **Platform** |
+|----------|-------------|--------------|
+| **git-secrets** | Pre-commit hook to detect secrets | All |
+| **detect-secrets** | Scan for secrets in code | All |
+| **truffleHog** | Scan git history for secrets | All |
+| **BFG Repo-Cleaner** | Remove secrets from git history | All |
+| **AWS Secrets Manager** | Store secrets in AWS | Backend (AWS) |
+| **HashiCorp Vault** | Centralized secrets management | Backend |
+| **Kubernetes Secrets** | Store secrets in K8s | Backend (K8s) |
+| **GitHub Secrets** | Store secrets for CI/CD | CI/CD |
 
 ***
 

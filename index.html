@@ -389,6 +389,7 @@
 <li><a href="#incident-management-process">Incident Management Process</a></li>
 <li><a href="#post-incident-review-postmortem">Post-Incident Review (Postmortem)</a></li>
 <li><a href="#tools--integration-recommendations">Tools &amp; Integration Recommendations</a></li>
+<li><a href="#secure-git-data-practices">Secure Git Data Practices</a></li>
 <li><a href="#knowledge-documentation-standards">Knowledge Documentation Standards</a></li>
 </ol>
 <hr />
@@ -2647,6 +2648,396 @@ throw new RuntimeException(e);
 <li>Admin access: api-gateway, web-frontend repos</li>
 <li>Read-only: All service repos (for API integration)</li>
 </ul>
+<hr />
+<h2 id="secure-git-data-practices">Secure Git Data Practices</h2>
+<h3 id="critical-rules-never-commit-sensitive-data">Critical Rules: Never Commit Sensitive Data</h3>
+<p><strong>What NEVER Goes in Git:</strong></p>
+<table>
+<thead>
+<tr>
+<th><strong>Type</strong></th>
+<th><strong>Examples</strong></th>
+<th><strong>Risk Level</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>API Keys</strong></td>
+<td>Stripe API keys, AWS access keys, Google Maps API keys</td>
+<td>🔴 Critical</td>
+</tr>
+<tr>
+<td><strong>Credentials</strong></td>
+<td>Database passwords, service account passwords, OAuth secrets</td>
+<td>🔴 Critical</td>
+</tr>
+<tr>
+<td><strong>Private Keys</strong></td>
+<td>SSH private keys, SSL/TLS certificates, signing keys</td>
+<td>🔴 Critical</td>
+</tr>
+<tr>
+<td><strong>Tokens</strong></td>
+<td>JWT secrets, OAuth tokens, access tokens, refresh tokens</td>
+<td>🔴 Critical</td>
+</tr>
+<tr>
+<td><strong>Connection Strings</strong></td>
+<td>Database connection strings with passwords, Redis URLs with auth</td>
+<td>🔴 Critical</td>
+</tr>
+<tr>
+<td><strong>Environment-Specific Config</strong></td>
+<td>Production database URLs, production API endpoints</td>
+<td>🟡 High</td>
+</tr>
+<tr>
+<td><strong>Secrets Files</strong></td>
+<td><code>.env</code> files, <code>secrets.yaml</code>, <code>credentials.json</code></td>
+<td>🔴 Critical</td>
+</tr>
+<tr>
+<td><strong>Hardcoded Credentials</strong></td>
+<td>Any passwords, keys, or tokens in source code</td>
+<td>🔴 Critical</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why This Matters:</strong></p>
+<ul>
+<li><strong>Git History is Permanent</strong>: Even if you delete a file, it remains in git history forever</li>
+<li><strong>Public Repos</strong>: Accidental public exposure exposes all historical commits</li>
+<li><strong>Compliance</strong>: GDPR, PCI-DSS, SOC 2 require strict credential management</li>
+<li><strong>Security Breaches</strong>: Leaked credentials can lead to data breaches, financial loss, reputation damage</li>
+</ul>
+<h3 id="backend-best-practices-java-microservices">Backend Best Practices (Java Microservices)</h3>
+<h4 id="1-use-environment-variables">1. Use Environment Variables</h4>
+<p><strong>Never do this:</strong></p>
+<pre><code>// ❌ BAD: Hardcoded credentials
+public class PaymentService {
+    private static final String STRIPE_API_KEY = "sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz";
+    private static final String DB_PASSWORD = "mySecretPassword123";
+}
+</code></pre>
+<p><strong>Do this instead:</strong></p>
+<pre><code>// ✅ GOOD: Environment variables
+@Configuration
+public class PaymentConfig {
+    @Value("${stripe.api.key}")
+    private String stripeApiKey;
+    
+    @Value("${database.password}")
+    private String dbPassword;
+}
+</code></pre>
+<p><strong>Application Properties (<code>application.yml</code>):</strong></p>
+<pre><code># ✅ GOOD: Reference environment variables
+stripe:
+  api:
+    key: ${STRIPE_API_KEY}
+
+database:
+  password: ${DB_PASSWORD}
+  url: ${DB_URL:jdbc:postgresql://localhost:5432/mydb}
+</code></pre>
+<h4 id="2-use-spring-cloud-config-or-kubernetes-secrets">2. Use Spring Cloud Config or Kubernetes Secrets</h4>
+<p><strong>Kubernetes Secret (for production):</strong></p>
+<pre><code># k8s/secrets/payment-service-secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: payment-service-secrets
+  namespace: production
+type: Opaque
+stringData:
+  stripe-api-key: "sk_live_..."
+  db-password: "secure-password"
+</code></pre>
+<h4 id="3-use-gitignore-for-local-development">3. Use <code>.gitignore</code> for Local Development</h4>
+<p><strong><code>.gitignore</code> (Java/Spring Boot):</strong></p>
+<pre><code># Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Configuration with secrets
+application-local.yml
+application-prod.yml
+application-secrets.yml
+config/local.properties
+config/secrets.properties
+
+# IDE files (may contain paths)
+.idea/
+.vscode/
+*.iml
+
+# Logs (may contain sensitive data)
+logs/
+*.log
+</code></pre>
+<h4 id="4-use-envexample-template">4. Use <code>.env.example</code> Template</h4>
+<p><strong>Create <code>.env.example</code> (committed to git):</strong></p>
+<pre><code># .env.example
+# Copy this file to .env and fill in your values
+# DO NOT commit .env to git
+
+# Stripe API Keys
+STRIPE_API_KEY=sk_test_your_key_here
+STRIPE_PUBLISHABLE_KEY=pk_test_your_key_here
+
+# Database
+DB_URL=jdbc:postgresql://localhost:5432/mydb
+DB_USERNAME=your_username
+DB_PASSWORD=your_password
+
+# JWT Secrets
+JWT_SECRET=your_jwt_secret_here
+JWT_EXPIRATION=86400000
+</code></pre>
+<h3 id="frontend-best-practices-web-applications">Frontend Best Practices (Web Applications)</h3>
+<h4 id="1-never-commit-api-keys-in-frontend-code">1. Never Commit API Keys in Frontend Code</h4>
+<p><strong>Never do this:</strong></p>
+<pre><code>// ❌ BAD: Hardcoded API key in frontend
+const GOOGLE_MAPS_API_KEY = "AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYz123456";
+const STRIPE_PUBLISHABLE_KEY = "pk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz";
+</code></pre>
+<p><strong>Do this instead:</strong></p>
+<pre><code>// ✅ GOOD: Environment variables (build-time)
+const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+const STRIPE_PUBLISHABLE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
+</code></pre>
+<p><strong>Note:</strong> Frontend environment variables are embedded in the build, so only use <strong>public</strong> keys (like Stripe publishable keys). Never use <strong>secret</strong> keys in frontend code.</p>
+<h4 id="2-use-environment-variables-build-time">2. Use Environment Variables (Build-Time)</h4>
+<p><strong><code>.env.local</code> (not committed):</strong></p>
+<pre><code># .env.local
+REACT_APP_GOOGLE_MAPS_API_KEY=AIzaSy...
+REACT_APP_STRIPE_PUBLISHABLE_KEY=pk_test_...
+REACT_APP_API_BASE_URL=https://api.example.com
+</code></pre>
+<h4 id="3-use-backend-proxy-for-secret-keys">3. Use Backend Proxy for Secret Keys</h4>
+<p><strong>For secret operations, proxy through backend:</strong></p>
+<pre><code>// ✅ GOOD: Secret operations go through backend
+// Frontend calls backend API, backend uses secret key
+async function processPayment(paymentData) {
+  const response = await fetch('/api/payments/process', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(paymentData)
+  });
+  return response.json();
+}
+</code></pre>
+<h3 id="mobile-app-best-practices-iosandroid">Mobile App Best Practices (iOS/Android)</h3>
+<h4 id="1-ios-use-xcode-build-configurations">1. iOS: Use Xcode Build Configurations</h4>
+<p><strong>Never do this:</strong></p>
+<pre><code>// ❌ BAD: Hardcoded API key
+let apiKey = "sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz"
+</code></pre>
+<p><strong>Do this instead:</strong></p>
+<pre><code>// ✅ GOOD: Build configuration
+struct Config {
+    static let apiKey: String = {
+        guard let path = Bundle.main.path(forResource: "Config", ofType: "plist"),
+              let plist = NSDictionary(contentsOfFile: path),
+              let apiKey = plist["API_KEY"] as? String else {
+            fatalError("API_KEY not found in Config.plist")
+        }
+        return apiKey
+    }()
+}
+</code></pre>
+<h4 id="2-android-use-localproperties-and-build-config">2. Android: Use <code>local.properties</code> and Build Config</h4>
+<p><strong>Never do this:</strong></p>
+<pre><code>// ❌ BAD: Hardcoded API key
+val apiKey = "sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz"
+</code></pre>
+<p><strong>Do this instead:</strong></p>
+<pre><code>// ✅ GOOD: BuildConfig field
+class ApiClient {
+    companion object {
+        val apiKey = BuildConfig.API_KEY
+        val apiBaseUrl = BuildConfig.API_BASE_URL
+    }
+}
+</code></pre>
+<h3 id="making-it-convenient-for-local-development">Making It Convenient for Local Development</h3>
+<h4 id="1-create-setup-scripts">1. Create Setup Scripts</h4>
+<p><strong><code>scripts/setup-local-dev.sh</code>:</strong></p>
+<pre><code>#!/bin/bash
+# Setup script for local development
+
+echo "🚀 Setting up local development environment..."
+
+# Backend services
+echo "📦 Setting up backend services..."
+for service in user-service payment-service checkout-service; do
+    if [ ! -f "services/$service/.env" ]; then
+        echo "Creating .env for $service..."
+        cp "services/$service/.env.example" "services/$service/.env"
+        echo "⚠️  Please fill in credentials in services/$service/.env"
+    fi
+done
+
+# Frontend
+echo "🌐 Setting up frontend..."
+if [ ! -f "web-frontend/.env.local" ]; then
+    cp "web-frontend/.env.example" "web-frontend/.env.local"
+    echo "⚠️  Please fill in API keys in web-frontend/.env.local"
+fi
+</code></pre>
+<h4 id="2-use-docker-compose-with-environment-files">2. Use Docker Compose with Environment Files</h4>
+<p><strong><code>docker-compose.local.yml</code>:</strong></p>
+<pre><code>version: '3.8'
+services:
+  user-service:
+    build: ./services/user-service
+    env_file:
+      - ./services/user-service/.env.local
+    environment:
+      - DB_URL=${DB_URL:-jdbc:postgresql://db:5432/userdb}
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+</code></pre>
+<h4 id="3-use-cicd-secrets-for-different-stages">3. Use CI/CD Secrets for Different Stages</h4>
+<p><strong>GitHub Actions Secrets:</strong></p>
+<pre><code># .github/workflows/deploy.yml
+name: Deploy to Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to ${{ github.event.inputs.environment }}
+        env:
+          STRIPE_API_KEY: ${{ secrets[format('STRIPE_API_KEY_{0}', github.event.inputs.environment)] }}
+          DB_PASSWORD: ${{ secrets[format('DB_PASSWORD_{0}', github.event.inputs.environment)] }}
+</code></pre>
+<h3 id="pre-commit-hooks-prevent-accidental-commits">Pre-Commit Hooks: Prevent Accidental Commits</h3>
+<h4 id="1-install-git-secrets-aws-tool">1. Install <code>git-secrets</code> (AWS Tool)</h4>
+<pre><code># Install git-secrets
+git clone https://github.com/awslabs/git-secrets.git
+cd git-secrets
+sudo make install
+
+# Configure for your repository
+cd /path/to/your/repo
+git secrets --install
+git secrets --register-aws
+
+# Add custom patterns
+git secrets --add 'sk_live_[A-Za-z0-9]{32,}'
+git secrets --add 'pk_live_[A-Za-z0-9]{32,}'
+</code></pre>
+<h3 id="if-secrets-are-already-committed-emergency-response">If Secrets Are Already Committed: Emergency Response</h3>
+<h4 id="1-immediate-actions">1. Immediate Actions</h4>
+<pre><code># 1. Rotate ALL exposed credentials immediately
+# - Change API keys in service dashboards
+# - Change database passwords
+# - Revoke OAuth tokens
+# - Regenerate SSH keys
+
+# 2. Remove from git history (if private repo)
+git filter-branch --force --index-filter \
+  "git rm --cached --ignore-unmatch path/to/secret-file" \
+  --prune-empty --tag-name-filter cat -- --all
+
+# 3. Force push (coordinate with team!)
+git push origin --force --all
+</code></pre>
+<h3 id="checklist-secure-git-practices">Checklist: Secure Git Practices</h3>
+<p><strong>Before Every Commit:</strong></p>
+<ul>
+<li>[ ] No API keys, passwords, or tokens in code</li>
+<li>[ ] No <code>.env</code> files committed</li>
+<li>[ ] No hardcoded credentials</li>
+<li>[ ] All secrets use environment variables</li>
+<li>[ ] <code>.gitignore</code> includes all secret files</li>
+<li>[ ] Pre-commit hooks installed and passing</li>
+</ul>
+<p><strong>For New Developers:</strong></p>
+<ul>
+<li>[ ] Read this section on secure git practices</li>
+<li>[ ] Copy <code>.env.example</code> to <code>.env</code> (don't commit <code>.env</code>)</li>
+<li>[ ] Set up local development environment</li>
+<li>[ ] Test that app works with environment variables</li>
+<li>[ ] Understand secrets management for your platform (backend/frontend/mobile)</li>
+</ul>
+<p><strong>For Production Deployments:</strong></p>
+<ul>
+<li>[ ] All secrets stored in secure vault (AWS Secrets Manager, Vault, etc.)</li>
+<li>[ ] Kubernetes secrets created (not in git)</li>
+<li>[ ] CI/CD uses GitHub/GitLab secrets (not hardcoded)</li>
+<li>[ ] Secrets rotated regularly (quarterly)</li>
+<li>[ ] Access to secrets audited and logged</li>
+</ul>
+<h3 id="tools-summary">Tools Summary</h3>
+<table>
+<thead>
+<tr>
+<th><strong>Tool</strong></th>
+<th><strong>Purpose</strong></th>
+<th><strong>Platform</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>git-secrets</strong></td>
+<td>Pre-commit hook to detect secrets</td>
+<td>All</td>
+</tr>
+<tr>
+<td><strong>detect-secrets</strong></td>
+<td>Scan for secrets in code</td>
+<td>All</td>
+</tr>
+<tr>
+<td><strong>truffleHog</strong></td>
+<td>Scan git history for secrets</td>
+<td>All</td>
+</tr>
+<tr>
+<td><strong>BFG Repo-Cleaner</strong></td>
+<td>Remove secrets from git history</td>
+<td>All</td>
+</tr>
+<tr>
+<td><strong>AWS Secrets Manager</strong></td>
+<td>Store secrets in AWS</td>
+<td>Backend (AWS)</td>
+</tr>
+<tr>
+<td><strong>HashiCorp Vault</strong></td>
+<td>Centralized secrets management</td>
+<td>Backend</td>
+</tr>
+<tr>
+<td><strong>Kubernetes Secrets</strong></td>
+<td>Store secrets in K8s</td>
+<td>Backend (K8s)</td>
+</tr>
+<tr>
+<td><strong>GitHub Secrets</strong></td>
+<td>Store secrets for CI/CD</td>
+<td>CI/CD</td>
+</tr>
+</tbody>
+</table>
 <hr />
 <h2 id="knowledge-documentation-standards">Knowledge Documentation Standards</h2>
 <h3 id="confluence-space-structure">Confluence Space Structure</h3>
