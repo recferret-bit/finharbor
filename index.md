@@ -2442,147 +2442,292 @@ window.APP_CONFIG = {
 </script>
 ```
 
-### Mobile App Best Practices (iOS/Android)
+### Mobile App Best Practices (Flutter)
 
-#### 1. iOS: Use Xcode Build Configurations
+#### 1. Use Environment Variables with `flutter_dotenv`
 
 **Never do this:**
-```swift
+```dart
 // ❌ BAD: Hardcoded API key
-let apiKey = "sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz"
-```
-
-**Do this instead:**
-```swift
-// ✅ GOOD: Build configuration
-struct Config {
-    static let apiKey: String = {
-        guard let path = Bundle.main.path(forResource: "Config", ofType: "plist"),
-              let plist = NSDictionary(contentsOfFile: path),
-              let apiKey = plist["API_KEY"] as? String else {
-            fatalError("API_KEY not found in Config.plist")
-        }
-        return apiKey
-    }()
+class ApiConfig {
+  static const String apiKey = "sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz";
+  static const String apiBaseUrl = "https://api.example.com";
 }
 ```
 
-**`Config.plist` (not committed, in `.gitignore`):**
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>API_KEY</key>
-    <string>your_api_key_here</string>
-    <key>API_BASE_URL</key>
-    <string>https://api.example.com</string>
-</dict>
-</plist>
+**Do this instead:**
+```dart
+// ✅ GOOD: Environment variables using flutter_dotenv
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+class ApiConfig {
+  static String get apiKey => dotenv.env['API_KEY'] ?? '';
+  static String get apiBaseUrl => dotenv.env['API_BASE_URL'] ?? '';
+  static String get stripePublishableKey => dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? '';
+}
+
+// Initialize in main.dart
+Future<void> main() async {
+  await dotenv.load(fileName: ".env");
+  runApp(MyApp());
+}
 ```
 
-**`Config.example.plist` (committed):**
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>API_KEY</key>
-    <string>your_api_key_here</string>
-    <key>API_BASE_URL</key>
-    <string>https://api-staging.example.com</string>
-</dict>
-</plist>
+**Add dependency to `pubspec.yaml`:**
+```yaml
+dependencies:
+  flutter_dotenv: ^5.1.0
+```
+
+**`.env` (not committed, in `.gitignore`):**
+```bash
+# .env
+API_KEY=your_api_key_here
+API_BASE_URL=https://api.example.com
+STRIPE_PUBLISHABLE_KEY=pk_test_your_key_here
+GOOGLE_MAPS_API_KEY=AIzaSy_your_key_here
+```
+
+**`.env.example` (committed):**
+```bash
+# .env.example
+# Copy this file to .env and fill in your values
+# DO NOT commit .env to git
+
+API_KEY=your_api_key_here
+API_BASE_URL=https://api-staging.example.com
+STRIPE_PUBLISHABLE_KEY=pk_test_your_key_here
+GOOGLE_MAPS_API_KEY=AIzaSy_your_key_here
+```
+
+**Update `pubspec.yaml` to include `.env` file:**
+```yaml
+flutter:
+  assets:
+    - .env
 ```
 
 **`.gitignore`:**
 ```gitignore
-# iOS
-Config.plist
-*.xcconfig
-*.xcuserdata
+# Flutter
+.env
+.env.local
+.env.*.local
+*.env
+
+# Build files
+build/
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
 ```
 
-#### 2. Android: Use `local.properties` and Build Config
+#### 2. Use Build Configuration Files for Different Environments
 
-**Never do this:**
-```kotlin
-// ❌ BAD: Hardcoded API key
-val apiKey = "sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz"
-```
+**Create environment-specific config files:**
 
-**Do this instead:**
-```kotlin
-// ✅ GOOD: BuildConfig field
-class ApiClient {
-    companion object {
-        val apiKey = BuildConfig.API_KEY
-        val apiBaseUrl = BuildConfig.API_BASE_URL
+**`lib/config/app_config.dart`:**
+```dart
+// lib/config/app_config.dart
+class AppConfig {
+  static const String environment = String.fromEnvironment(
+    'ENVIRONMENT',
+    defaultValue: 'dev',
+  );
+  
+  static String get apiBaseUrl {
+    switch (environment) {
+      case 'prod':
+        return dotenv.env['API_BASE_URL_PROD'] ?? '';
+      case 'staging':
+        return dotenv.env['API_BASE_URL_STAGING'] ?? '';
+      default:
+        return dotenv.env['API_BASE_URL_DEV'] ?? 'http://localhost:8080';
     }
+  }
+  
+  static bool get isProduction => environment == 'prod';
+  static bool get isStaging => environment == 'staging';
+  static bool get isDevelopment => environment == 'dev';
 }
 ```
 
-**`local.properties` (not committed, in `.gitignore`):**
-```properties
-# local.properties
+**Build commands for different environments:**
+```bash
+# Development
+flutter run --dart-define=ENVIRONMENT=dev
+
+# Staging
+flutter build apk --dart-define=ENVIRONMENT=staging
+flutter build ios --dart-define=ENVIRONMENT=staging
+
+# Production
+flutter build apk --release --dart-define=ENVIRONMENT=prod
+flutter build ios --release --dart-define=ENVIRONMENT=prod
+```
+
+#### 3. Use `--dart-define` for CI/CD Secrets
+
+**For CI/CD pipelines, pass secrets as build arguments:**
+
+**GitHub Actions example:**
+```yaml
+# .github/workflows/build-flutter.yml
+name: Build Flutter App
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.16.0'
+      
+      - name: Build APK
+        run: |
+          flutter build apk --release \
+            --dart-define=ENVIRONMENT=prod \
+            --dart-define=API_KEY=${{ secrets.API_KEY }} \
+            --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }}
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+  
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.16.0'
+      
+      - name: Build iOS
+        run: |
+          flutter build ios --release \
+            --dart-define=ENVIRONMENT=prod \
+            --dart-define=API_KEY=${{ secrets.API_KEY }} \
+            --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }}
+```
+
+**Access in code:**
+```dart
+// lib/config/secrets.dart
+class Secrets {
+  static String get apiKey => const String.fromEnvironment(
+    'API_KEY',
+    defaultValue: '',
+  );
+  
+  static String get apiBaseUrl => const String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://api.example.com',
+  );
+}
+```
+
+#### 4. Use `flutter_config` Package for Native Platform Integration
+
+**For accessing secrets in native iOS/Android code:**
+
+**Add dependency:**
+```yaml
+dependencies:
+  flutter_config: ^2.0.0
+```
+
+**Create `flutter_config.dart`:**
+```dart
+import 'package:flutter_config/flutter_config.dart';
+
+class AppSecrets {
+  static String get apiKey => FlutterConfig.get('API_KEY');
+  static String get apiBaseUrl => FlutterConfig.get('API_BASE_URL');
+}
+```
+
+**Create `.env` file:**
+```bash
 API_KEY=your_api_key_here
 API_BASE_URL=https://api.example.com
 ```
 
-**`build.gradle.kts` (reads from `local.properties`):**
+**Access in native Android (`MainActivity.kt`):**
 ```kotlin
-// build.gradle.kts
-val localProperties = java.util.Properties()
-val localPropertiesFile = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    localProperties.load(java.io.FileInputStream(localPropertiesFile))
-}
+import com.pauldemarco.flutter_config.FlutterConfig
 
-android {
-    defaultConfig {
-        buildConfigField("String", "API_KEY", "\"${localProperties.getProperty("API_KEY", "")}\"")
-        buildConfigField("String", "API_BASE_URL", "\"${localProperties.getProperty("API_BASE_URL", "")}\"")
+class MainActivity: FlutterActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val apiKey = FlutterConfig.env()["API_KEY"]
+        // Use apiKey in native code
     }
 }
 ```
 
-**`.gitignore`:**
-```gitignore
-# Android
-local.properties
-*.keystore
-*.jks
+**Access in native iOS (`AppDelegate.swift`):**
+```swift
+import FlutterConfig
+
+@UIApplicationMain
+class AppDelegate: FlutterAppDelegate {
+    override func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+        let apiKey = FlutterConfig.env()["API_KEY"]
+        // Use apiKey in native code
+        return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    }
+}
 ```
 
-#### 3. Use Environment-Specific Build Variants
+#### 5. Use Environment-Specific App Icons and Names
 
-**Android `build.gradle.kts`:**
-```kotlin
+**Create flavor-specific configurations:**
+
+**`android/app/build.gradle`:**
+```gradle
 android {
-    buildTypes {
-        getByName("debug") {
-            buildConfigField("String", "API_BASE_URL", "\"https://api-dev.example.com\"")
-        }
-        getByName("release") {
-            buildConfigField("String", "API_BASE_URL", "\"https://api.example.com\"")
-        }
-    }
-    
-    flavorDimensions += "environment"
+    flavorDimensions "environment"
     productFlavors {
-        create("dev") {
-            dimension = "environment"
-            applicationIdSuffix = ".dev"
+        dev {
+            dimension "environment"
+            applicationIdSuffix ".dev"
+            resValue "string", "app_name", "MyApp Dev"
         }
-        create("staging") {
-            dimension = "environment"
-            applicationIdSuffix = ".staging"
+        staging {
+            dimension "environment"
+            applicationIdSuffix ".staging"
+            resValue "string", "app_name", "MyApp Staging"
         }
-        create("prod") {
-            dimension = "environment"
+        prod {
+            dimension "environment"
+            resValue "string", "app_name", "MyApp"
         }
     }
 }
+```
+
+**Build with flavor:**
+```bash
+# Development
+flutter build apk --flavor dev
+
+# Staging
+flutter build apk --flavor staging
+
+# Production
+flutter build apk --flavor prod --release
 ```
 
 ### Making It Convenient for Local Development
@@ -2613,18 +2758,11 @@ if [ ! -f "web-frontend/.env.local" ]; then
     echo "⚠️  Please fill in API keys in web-frontend/.env.local"
 fi
 
-# Mobile iOS
-echo "📱 Setting up iOS..."
-if [ ! -f "mobile-ios/Config.plist" ]; then
-    cp "mobile-ios/Config.example.plist" "mobile-ios/Config.plist"
-    echo "⚠️  Please fill in API keys in mobile-ios/Config.plist"
-fi
-
-# Mobile Android
-echo "🤖 Setting up Android..."
-if [ ! -f "mobile-android/local.properties" ]; then
-    cp "mobile-android/local.properties.example" "mobile-android/local.properties"
-    echo "⚠️  Please fill in API keys in mobile-android/local.properties"
+# Mobile Flutter
+echo "📱 Setting up Flutter..."
+if [ ! -f "mobile-flutter/.env" ]; then
+    cp "mobile-flutter/.env.example" "mobile-flutter/.env"
+    echo "⚠️  Please fill in API keys in mobile-flutter/.env"
 fi
 
 echo "✅ Setup complete! Please fill in credentials in the generated files."
