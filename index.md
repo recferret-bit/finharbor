@@ -1204,6 +1204,42 @@ This section defines the git branching strategy and feature stand deployment pro
 
 ### Branch Structure
 
+#### Visual Git Branch Hierarchy
+
+```mermaid
+gitgraph
+    commit id: "Initial"
+    branch main
+    checkout main
+    commit id: "Production"
+    branch dev
+    checkout dev
+    commit id: "Integration"
+    branch feature/CORE-100
+    checkout feature/CORE-100
+    commit id: "Core Team Work"
+    checkout dev
+    branch feature/RETAIL-250
+    checkout feature/RETAIL-250
+    commit id: "Retail Team Work"
+    checkout dev
+    branch feature/AML-75
+    checkout feature/AML-75
+    commit id: "AML Team Work"
+    checkout dev
+    branch feature/REDESIGN-42
+    checkout feature/REDESIGN-42
+    commit id: "Redesign Team Work"
+    checkout dev
+    merge feature/CORE-100
+    commit id: "Integrated CORE-100"
+    merge feature/RETAIL-250
+    commit id: "Integrated RETAIL-250"
+    checkout main
+    merge dev
+    commit id: "Release to Production"
+```
+
 #### Core Branches
 
 ```
@@ -1253,6 +1289,62 @@ A **feature stand** is a fully functional, isolated environment created on-deman
 2. Deploys each service from `dev` branch by default
 3. **Overrides** to deploy from the feature branch if that branch exists in the service's repository
 4. Provides a unique URL for QA testing
+
+#### Visual Feature Stand Deployment Flow
+
+```mermaid
+flowchart TD
+    A[Developer creates feature branch<br/>feature/CORE-100-oauth2] --> B[Push to GitLab]
+    B --> C[Click 'Deploy to Feature Stand'<br/>in GitLab UI]
+    C --> D[Infrastructure Automation<br/>Detects: CORE-100]
+    D --> E{Scan All Service Repos<br/>for branch: feature/CORE-100-*}
+    E --> F1[user-service<br/>Branch found?]
+    E --> F2[auth-service<br/>Branch found?]
+    E --> F3[payment-service<br/>Branch found?]
+    E --> F4[product-service<br/>Branch found?]
+    E --> F5[Other services...]
+    
+    F1 -->|Yes| G1[Deploy from<br/>feature/CORE-100-*]
+    F1 -->|No| H1[Deploy from<br/>dev branch]
+    
+    F2 -->|Yes| G2[Deploy from<br/>feature/CORE-100-*]
+    F2 -->|No| H2[Deploy from<br/>dev branch]
+    
+    F3 -->|Yes| G3[Deploy from<br/>feature/CORE-100-*]
+    F3 -->|No| H3[Deploy from<br/>dev branch]
+    
+    F4 -->|Yes| G4[Deploy from<br/>feature/CORE-100-*]
+    F4 -->|No| H4[Deploy from<br/>dev branch]
+    
+    F5 --> H5[Deploy from<br/>dev branch]
+    
+    G1 --> I[Create Kubernetes Namespace<br/>feature-stand-core-100]
+    G2 --> I
+    G3 --> I
+    G4 --> I
+    H1 --> I
+    H2 --> I
+    H3 --> I
+    H4 --> I
+    H5 --> I
+    
+    I --> J[Configure Service Discovery<br/>Databases, Kafka Topics]
+    J --> K[Generate Feature Stand URL<br/>https://feature-stand-core-100.example.com]
+    K --> L[Notify QA Team<br/>with deployment details]
+    L --> M[QA Testing on Feature Stand]
+    M --> N{QA Approved?}
+    N -->|Yes| O[Move to Code Review]
+    N -->|No| P[Developer fixes issues]
+    P --> B
+    O --> Q[PR Created/Updated]
+    Q --> R[Code Review]
+    R --> S[Merge to dev/main]
+    
+    style A fill:#e1f5ff
+    style K fill:#c8e6c9
+    style M fill:#fff9c4
+    style S fill:#ffccbc
+```
 
 #### Workflow
 
@@ -1551,6 +1643,75 @@ deploy-feature-stand-orchestration:
 
 ### Parallel Development Workflow
 
+#### Visual Parallel Development Scenario
+
+```mermaid
+graph TB
+    subgraph "Repository: user-service"
+        US_DEV[dev branch]
+        US_CORE[feature/CORE-100-oauth2<br/>Core Team]
+        US_RETAIL[feature/RETAIL-250-product-search<br/>Retail Team]
+    end
+    
+    subgraph "Repository: order-service"
+        OS_DEV[dev branch]
+        OS_CORE[feature/CORE-100-oauth2<br/>Core Team]
+        OS_RETAIL[feature/RETAIL-250-product-search<br/>Retail Team]
+    end
+    
+    subgraph "Feature Stand: CORE-100"
+        FS_CORE[feature-stand-core-100<br/>Kubernetes Namespace]
+        FS_CORE_US[user-service<br/>from feature/CORE-100-oauth2 ✅]
+        FS_CORE_OS[order-service<br/>from feature/CORE-100-oauth2 ✅]
+        FS_CORE_OTHER[Other services<br/>from dev branch]
+        FS_CORE_URL[URL: feature-stand-core-100.example.com]
+    end
+    
+    subgraph "Feature Stand: RETAIL-250"
+        FS_RETAIL[feature-stand-retail-250<br/>Kubernetes Namespace]
+        FS_RETAIL_US[user-service<br/>from feature/RETAIL-250-product-search ✅]
+        FS_RETAIL_OS[order-service<br/>from feature/RETAIL-250-product-search ✅]
+        FS_RETAIL_OTHER[Other services<br/>from dev branch]
+        FS_RETAIL_URL[URL: feature-stand-retail-250.example.com]
+    end
+    
+    subgraph "QA Teams"
+        QA_CORE[Core Team QA<br/>Testing CORE-100]
+        QA_RETAIL[Retail Team QA<br/>Testing RETAIL-250]
+    end
+    
+    US_CORE --> FS_CORE_US
+    OS_CORE --> FS_CORE_OS
+    US_DEV --> FS_CORE_OTHER
+    OS_DEV --> FS_CORE_OTHER
+    
+    US_RETAIL --> FS_RETAIL_US
+    OS_RETAIL --> FS_RETAIL_OS
+    US_DEV --> FS_RETAIL_OTHER
+    OS_DEV --> FS_RETAIL_OTHER
+    
+    FS_CORE_US --> FS_CORE
+    FS_CORE_OS --> FS_CORE
+    FS_CORE_OTHER --> FS_CORE
+    FS_CORE --> FS_CORE_URL
+    FS_CORE_URL --> QA_CORE
+    
+    FS_RETAIL_US --> FS_RETAIL
+    FS_RETAIL_OS --> FS_RETAIL
+    FS_RETAIL_OTHER --> FS_RETAIL
+    FS_RETAIL --> FS_RETAIL_URL
+    FS_RETAIL_URL --> QA_RETAIL
+    
+    style FS_CORE fill:#e3f2fd
+    style FS_RETAIL fill:#fff3e0
+    style QA_CORE fill:#c8e6c9
+    style QA_RETAIL fill:#c8e6c9
+    style US_CORE fill:#bbdefb
+    style OS_CORE fill:#bbdefb
+    style US_RETAIL fill:#ffe0b2
+    style OS_RETAIL fill:#ffe0b2
+```
+
 #### Scenario: Multiple Teams Working on Related Features
 
 **Example:** Core Team (CORE-100) and Retail Team (RETAIL-250) both modify `user-service` and `order-service`.
@@ -1643,7 +1804,96 @@ order-service repository:
    - Use feature stands to test conflicting changes in isolation first
    - Daily standups to identify potential conflicts early
 
-### Git Workflow Diagram
+### Complete Git Workflow Diagram
+
+```mermaid
+flowchart TD
+    subgraph "Production"
+        MAIN[main branch<br/>Production-ready code]
+    end
+    
+    subgraph "Integration"
+        DEV[dev branch<br/>Integration & Testing]
+    end
+    
+    subgraph "Feature Branches"
+        CORE[feature/CORE-100-oauth2<br/>Core Team]
+        RETAIL[feature/RETAIL-250-product-search<br/>Retail Team]
+        AML[feature/AML-75-kyc-checks<br/>AML Team]
+        REDESIGN[feature/REDESIGN-42-checkout-ui<br/>Redesign Team]
+    end
+    
+    subgraph "Feature Stands"
+        FS_CORE[Feature Stand: CORE-100<br/>feature-stand-core-100.example.com]
+        FS_RETAIL[Feature Stand: RETAIL-250<br/>feature-stand-retail-250.example.com]
+        FS_AML[Feature Stand: AML-75<br/>feature-stand-aml-75.example.com]
+        FS_REDESIGN[Feature Stand: REDESIGN-42<br/>feature-stand-redesign-42.example.com]
+    end
+    
+    subgraph "QA Testing"
+        QA_CORE[QA: Core Team]
+        QA_RETAIL[QA: Retail Team]
+        QA_AML[QA: AML Team]
+        QA_REDESIGN[QA: Redesign Team]
+    end
+    
+    subgraph "Code Review"
+        CR_CORE[Code Review: CORE-100]
+        CR_RETAIL[Code Review: RETAIL-250]
+        CR_AML[Code Review: AML-75]
+        CR_REDESIGN[Code Review: REDESIGN-42]
+    end
+    
+    subgraph "Environments"
+        ENV_DEV[DEV Environment<br/>Auto-deploy from dev]
+        ENV_QA[QA Environment<br/>Manual promotion]
+        ENV_STAGING[Staging Environment<br/>Release Manager approval]
+        ENV_PROD[Production Environment<br/>After staging validation]
+    end
+    
+    CORE -->|Deploy| FS_CORE
+    RETAIL -->|Deploy| FS_RETAIL
+    AML -->|Deploy| FS_AML
+    REDESIGN -->|Deploy| FS_REDESIGN
+    
+    FS_CORE --> QA_CORE
+    FS_RETAIL --> QA_RETAIL
+    FS_AML --> QA_AML
+    FS_REDESIGN --> QA_REDESIGN
+    
+    QA_CORE -->|Approved| CR_CORE
+    QA_RETAIL -->|Approved| CR_RETAIL
+    QA_AML -->|Approved| CR_AML
+    QA_REDESIGN -->|Approved| CR_REDESIGN
+    
+    CR_CORE -->|Merge| DEV
+    CR_RETAIL -->|Merge| DEV
+    CR_AML -->|Merge| DEV
+    CR_REDESIGN -->|Merge| DEV
+    
+    DEV -->|Auto-deploy| ENV_DEV
+    ENV_DEV -->|Manual promotion| ENV_QA
+    ENV_QA -->|Release Manager approval| ENV_STAGING
+    ENV_STAGING -->|After validation| ENV_PROD
+    ENV_PROD --> MAIN
+    
+    style MAIN fill:#ffcdd2
+    style DEV fill:#c8e6c9
+    style CORE fill:#bbdefb
+    style RETAIL fill:#ffe0b2
+    style AML fill:#f8bbd0
+    style REDESIGN fill:#d1c4e9
+    style FS_CORE fill:#e3f2fd
+    style FS_RETAIL fill:#fff3e0
+    style FS_AML fill:#fce4ec
+    style FS_REDESIGN fill:#ede7f6
+    style QA_CORE fill:#c8e6c9
+    style QA_RETAIL fill:#c8e6c9
+    style QA_AML fill:#c8e6c9
+    style QA_REDESIGN fill:#c8e6c9
+```
+
+#### Text-Based Workflow Summary
 
 ```
                     main (Production)
