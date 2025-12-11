@@ -1196,6 +1196,487 @@ Release Notes Generated (Jira → Confluence)
 
 ***
 
+## Git Branching Strategy & Feature Stand Deployment
+
+### Overview
+
+This section defines the git branching strategy and feature stand deployment process for managing parallel development across four cross-functional teams (Retail, Core, AML, Redesign). The strategy enables teams to work independently while maintaining code quality and enabling parallel QA and release processes.
+
+### Branch Structure
+
+#### Core Branches
+
+```
+main (or master)
+├── Production-ready code only
+├── Protected branch (requires PR + approvals)
+└── Auto-deploys to Production after staging validation
+
+dev
+├── Integration branch for all teams
+├── All feature branches merge here first
+├── Auto-deploys to DEV environment
+└── Used for daily integration testing
+```
+
+#### Feature Branches
+
+**Naming Convention:** `feature/{TEAM-PREFIX}-{TICKET-NUMBER}-{short-description}`
+
+**Team Prefixes:**
+- **CORE**: Core Team (authentication, payments, user management)
+- **RETAIL**: Retail Team (customer-facing features, checkout, catalog)
+- **AML**: AML Team (anti-money laundering, compliance)
+- **REDESIGN**: Redesign Team (UI modernization, frontend integration)
+
+**Examples:**
+```
+feature/CORE-100-implement-oauth2
+feature/RETAIL-250-add-product-search
+feature/AML-75-enhance-kyc-checks
+feature/REDESIGN-42-update-checkout-ui
+```
+
+**Branch Lifecycle:**
+1. Created from `dev` branch
+2. Developer works on feature
+3. PR created to `dev` (for integration) or `main` (for direct production path)
+4. After merge, branch can be deleted (or kept for feature stand deployment)
+
+### Feature Stand Deployment Process
+
+#### Concept
+
+A **feature stand** is a fully functional, isolated environment created on-demand for testing cross-service features. When a developer deploys their feature branch to a feature stand, the infrastructure automatically:
+
+1. Creates a complete environment with all microservices
+2. Deploys each service from `dev` branch by default
+3. **Overrides** to deploy from the feature branch if that branch exists in the service's repository
+4. Provides a unique URL for QA testing
+
+#### Workflow
+
+```
+Developer completes feature work
+    ↓
+Developer creates feature branch: feature/CORE-100-oauth2
+    ↓
+Developer pushes branch to GitLab
+    ↓
+Developer clicks "Deploy to Feature Stand" in GitLab UI
+    ↓
+Infrastructure Automation:
+  - Detects feature branch name: CORE-100
+  - Scans all service repositories for branch: feature/CORE-100-*
+  - Creates Kubernetes namespace: feature-stand-core-100
+  - For each service:
+    ├── If branch exists: feature/CORE-100-* → deploy from that branch
+    └── If branch doesn't exist: deploy from dev branch
+  - Configures service discovery, databases, Kafka topics
+  - Generates unique URL: https://feature-stand-core-100.example.com
+    ↓
+Feature Stand Ready
+    ↓
+QA Team receives notification with:
+  - Feature stand URL
+  - List of services deployed from feature branch
+  - List of services deployed from dev branch
+  - Branch names and commit SHAs
+    ↓
+QA performs testing on feature stand
+    ↓
+After QA approval → Move to Code Review
+    ↓
+PR created/updated → Code Review → Merge to dev/main
+```
+
+#### Branch Detection Logic
+
+**Infrastructure Script (Pseudo-code):**
+
+```python
+def deploy_feature_stand(feature_branch_name):
+    """
+    Deploys a feature stand environment based on branch naming.
+    
+    Args:
+        feature_branch_name: e.g., "CORE-100" (extracted from feature/CORE-100-oauth2)
+    """
+    # Extract team prefix and ticket number
+    team_prefix, ticket_number = parse_branch_name(feature_branch_name)
+    # e.g., "CORE", "100"
+    
+    # List of all microservices
+    services = [
+        "user-service", "auth-service", "payment-service",
+        "product-service", "order-service", "checkout-service",
+        "kyc-service", "compliance-service", "frontend-service"
+    ]
+    
+    deployment_config = {}
+    
+    for service in services:
+        repo_url = f"https://gitlab.com/company/{service}.git"
+        
+        # Check if feature branch exists in this service's repo
+        branch_patterns = [
+            f"feature/{feature_branch_name}-*",  # Exact match: feature/CORE-100-*
+            f"feature/{team_prefix}-{ticket_number}-*",  # Team match: feature/CORE-100-*
+        ]
+        
+        feature_branch = None
+        for pattern in branch_patterns:
+            if branch_exists(repo_url, pattern):
+                feature_branch = find_matching_branch(repo_url, pattern)
+                break
+        
+        if feature_branch:
+            # Deploy from feature branch
+            deployment_config[service] = {
+                "branch": feature_branch,
+                "source": "feature_branch",
+                "reason": f"Feature branch {feature_branch} found"
+            }
+        else:
+            # Deploy from dev branch (default)
+            deployment_config[service] = {
+                "branch": "dev",
+                "source": "dev_branch",
+                "reason": f"No feature branch found, using dev"
+            }
+    
+    # Create Kubernetes namespace
+    namespace = f"feature-stand-{team_prefix.lower()}-{ticket_number}"
+    create_namespace(namespace)
+    
+    # Deploy each service
+    for service, config in deployment_config.items():
+        deploy_service(
+            service=service,
+            namespace=namespace,
+            branch=config["branch"],
+            environment="feature-stand"
+        )
+    
+    # Configure service discovery, databases, etc.
+    setup_feature_stand_infrastructure(namespace)
+    
+    # Generate and return feature stand URL
+    feature_stand_url = f"https://{namespace}.example.com"
+    return {
+        "url": feature_stand_url,
+        "namespace": namespace,
+        "deployments": deployment_config
+    }
+```
+
+### GitLab CI/CD Configuration
+
+#### Feature Stand Deployment Job
+
+**`.gitlab-ci.yml` (in each service repository):**
+
+```yaml
+stages:
+  - build
+  - test
+  - deploy-dev
+  - deploy-feature-stand
+  - deploy-qa
+  - deploy-staging
+  - deploy-production
+
+variables:
+  DOCKER_REGISTRY: registry.gitlab.com/company
+  KUBERNETES_NAMESPACE_DEV: microservices-dev
+  KUBERNETES_NAMESPACE_QA: microservices-qa
+
+# Standard CI pipeline for all branches
+build:
+  stage: build
+  script:
+    - mvn clean package -DskipTests
+    - docker build -t $DOCKER_REGISTRY/$CI_PROJECT_NAME:$CI_COMMIT_SHA .
+    - docker push $DOCKER_REGISTRY/$CI_PROJECT_NAME:$CI_COMMIT_SHA
+  only:
+    - branches
+
+test:
+  stage: test
+  script:
+    - mvn test
+    - mvn jacoco:report
+  coverage: '/Total.*?([0-9]{1,3})%/'
+  only:
+    - branches
+
+# Auto-deploy to DEV when merged to dev branch
+deploy-dev:
+  stage: deploy-dev
+  script:
+    - kubectl set image deployment/$CI_PROJECT_NAME \
+        $CI_PROJECT_NAME=$DOCKER_REGISTRY/$CI_PROJECT_NAME:$CI_COMMIT_SHA \
+        -n $KUBERNETES_NAMESPACE_DEV
+  only:
+    - dev
+  when: on_success
+
+# Feature Stand Deployment (Manual Trigger)
+deploy-feature-stand:
+  stage: deploy-feature-stand
+  script:
+    - |
+      # Extract feature branch identifier (e.g., CORE-100 from feature/CORE-100-oauth2)
+      FEATURE_ID=$(echo $CI_COMMIT_REF_NAME | sed 's/feature\///' | cut -d'-' -f1-2)
+      # e.g., "CORE-100"
+      
+      NAMESPACE="feature-stand-$(echo $FEATURE_ID | tr '[:upper:]' '[:lower:]' | tr '-' '-')"
+      # e.g., "feature-stand-core-100"
+      
+      # Create namespace if it doesn't exist
+      kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+      
+      # Deploy this service to feature stand
+      kubectl set image deployment/$CI_PROJECT_NAME \
+        $CI_PROJECT_NAME=$DOCKER_REGISTRY/$CI_PROJECT_NAME:$CI_COMMIT_SHA \
+        -n $NAMESPACE
+      
+      # Update ingress with feature stand URL
+      kubectl annotate ingress $CI_PROJECT_NAME \
+        -n $NAMESPACE \
+        feature-stand-url="https://$NAMESPACE.example.com" \
+        --overwrite
+      
+      # Notify QA team
+      curl -X POST $SLACK_WEBHOOK_URL \
+        -H 'Content-Type: application/json' \
+        -d "{
+          \"text\": \"Feature Stand Deployed: $FEATURE_ID\",
+          \"blocks\": [{
+            \"type\": \"section\",
+            \"text\": {
+              \"type\": \"mrkdwn\",
+              \"text\": \"*Feature Stand Ready*\n*Feature:* $FEATURE_ID\n*Service:* $CI_PROJECT_NAME\n*URL:* https://$NAMESPACE.example.com\n*Branch:* $CI_COMMIT_REF_NAME\n*Commit:* $CI_COMMIT_SHA\"
+            }
+          }]
+        }"
+  when: manual
+  only:
+    - /^feature\/.*$/
+  environment:
+    name: feature-stand/$CI_COMMIT_REF_NAME
+    url: https://feature-stand-$(echo $CI_COMMIT_REF_NAME | sed 's/feature\///' | cut -d'-' -f1-2 | tr '[:upper:]' '[:lower:]').example.com
+
+# QA deployment (after feature stand testing)
+deploy-qa:
+  stage: deploy-qa
+  script:
+    - kubectl set image deployment/$CI_PROJECT_NAME \
+        $CI_PROJECT_NAME=$DOCKER_REGISTRY/$CI_PROJECT_NAME:$CI_COMMIT_SHA \
+        -n $KUBERNETES_NAMESPACE_QA
+  only:
+    - dev
+    - main
+  when: manual
+  environment:
+    name: qa
+    url: https://qa.example.com
+```
+
+#### Central Feature Stand Orchestration
+
+**Infrastructure Repository: `.gitlab-ci.yml` (or Terraform/Ansible script):**
+
+```yaml
+# This job runs in a central infrastructure repository
+# It orchestrates feature stand creation across all services
+
+deploy-feature-stand-orchestration:
+  stage: deploy
+  script:
+    - |
+      # This script is triggered when a developer clicks "Deploy Feature Stand"
+      # It scans all service repositories and creates the feature stand
+      
+      FEATURE_BRANCH_NAME=$CI_COMMIT_REF_NAME  # e.g., "feature/CORE-100-oauth2"
+      FEATURE_ID=$(echo $FEATURE_BRANCH_NAME | sed 's/feature\///' | cut -d'-' -f1-2)
+      # e.g., "CORE-100"
+      
+      SERVICES=(
+        "user-service"
+        "auth-service"
+        "payment-service"
+        "product-service"
+        "order-service"
+        "checkout-service"
+        "kyc-service"
+        "compliance-service"
+        "frontend-service"
+      )
+      
+      NAMESPACE="feature-stand-$(echo $FEATURE_ID | tr '[:upper:]' '[:lower:]')"
+      
+      # Create namespace
+      kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+      
+      # For each service, check if feature branch exists and trigger deployment
+      for SERVICE in "${SERVICES[@]}"; do
+        # Check if branch exists in service repo
+        if git ls-remote --heads https://gitlab.com/company/$SERVICE.git | grep -q "feature/$FEATURE_ID"; then
+          echo "Found feature branch for $SERVICE, deploying from feature branch"
+          # Trigger deployment job in service's CI pipeline
+          curl -X POST "https://gitlab.com/api/v4/projects/company%2F$SERVICE/trigger/pipeline" \
+            -F "token=$CI_JOB_TOKEN" \
+            -F "ref=feature/$FEATURE_ID-*" \
+            -F "variables[FEATURE_STAND_NAMESPACE]=$NAMESPACE" \
+            -F "variables[DEPLOY_TO_FEATURE_STAND]=true"
+        else
+          echo "No feature branch for $SERVICE, deploying from dev"
+          # Trigger deployment from dev branch
+          curl -X POST "https://gitlab.com/api/v4/projects/company%2F$SERVICE/trigger/pipeline" \
+            -F "token=$CI_JOB_TOKEN" \
+            -F "ref=dev" \
+            -F "variables[FEATURE_STAND_NAMESPACE]=$NAMESPACE" \
+            -F "variables[DEPLOY_TO_FEATURE_STAND]=true"
+        fi
+      done
+      
+      # Wait for all deployments to complete
+      # Configure service mesh, databases, etc.
+      # Generate feature stand URL and notify teams
+  when: manual
+  only:
+    - /^feature\/.*$/
+```
+
+### Parallel Development Workflow
+
+#### Scenario: Multiple Teams Working on Related Features
+
+**Example:** Core Team (CORE-100) and Retail Team (RETAIL-250) both modify `user-service` and `order-service`.
+
+**Branch State:**
+```
+user-service repository:
+  ├── dev (integration branch)
+  ├── feature/CORE-100-oauth2 (Core Team)
+  └── feature/RETAIL-250-product-search (Retail Team)
+
+order-service repository:
+  ├── dev
+  ├── feature/CORE-100-oauth2 (Core Team)
+  └── feature/RETAIL-250-product-search (Retail Team)
+```
+
+**Feature Stand Deployment:**
+
+1. **Core Team deploys CORE-100 feature stand:**
+   - `user-service`: Deployed from `feature/CORE-100-oauth2` ✅
+   - `order-service`: Deployed from `feature/CORE-100-oauth2` ✅
+   - All other services: Deployed from `dev` branch
+
+2. **Retail Team deploys RETAIL-250 feature stand:**
+   - `user-service`: Deployed from `feature/RETAIL-250-product-search` ✅
+   - `order-service`: Deployed from `feature/RETAIL-250-product-search` ✅
+   - All other services: Deployed from `dev` branch
+
+3. **Both feature stands run in parallel:**
+   - `https://feature-stand-core-100.example.com` (Core Team QA)
+   - `https://feature-stand-retail-250.example.com` (Retail Team QA)
+
+4. **No conflicts:** Each team tests independently on their isolated environment.
+
+### Best Practices
+
+#### Branch Management
+
+1. **Always create feature branches from `dev`:**
+   ```bash
+   git checkout dev
+   git pull origin dev
+   git checkout -b feature/CORE-100-oauth2
+   ```
+
+2. **Keep feature branches short-lived:**
+   - Merge to `dev` within 1-2 weeks
+   - Delete branch after merge (unless needed for feature stand)
+
+3. **Regularly sync with `dev`:**
+   ```bash
+   git checkout feature/CORE-100-oauth2
+   git merge dev  # or git rebase dev
+   ```
+
+4. **Use descriptive branch names:**
+   - ✅ Good: `feature/CORE-100-implement-oauth2`
+   - ❌ Bad: `feature/oauth2` (missing team prefix and ticket)
+
+#### Feature Stand Management
+
+1. **Clean up feature stands after QA:**
+   - Feature stands consume resources
+   - Delete namespace after feature is merged to `dev` or `main`
+   - Automate cleanup: Delete feature stands older than 7 days
+
+2. **Document feature stand dependencies:**
+   - If feature requires specific service versions, document in PR description
+   - Use feature stand for integration testing, not unit testing
+
+3. **Coordinate feature stand usage:**
+   - Limit concurrent feature stands per team (e.g., max 2 per team)
+   - Use feature stands for cross-service features, not single-service changes
+
+#### Parallel Release Management
+
+1. **Team Independence:**
+   - Each team can release independently
+   - Features merged to `dev` are automatically deployed to DEV environment
+   - Teams coordinate releases through daily standups
+
+2. **Release Coordination:**
+   - Use `dev` branch for integration testing
+   - Use feature stands for isolated feature testing
+   - Coordinate production releases through Release Manager
+
+3. **Conflict Resolution:**
+   - If two teams modify the same service, merge conflicts resolved in `dev` branch
+   - Use feature stands to test conflicting changes in isolation first
+   - Daily standups to identify potential conflicts early
+
+### Git Workflow Diagram
+
+```
+                    main (Production)
+                       ↑
+                       │ (After QA + Code Review)
+                       │
+                    dev (Integration)
+                 ↙  ↓  ↘  ↙  ↓  ↘
+        feature/   feature/   feature/   feature/
+        CORE-100   RETAIL-250  AML-75    REDESIGN-42
+           ↓           ↓          ↓           ↓
+    [Feature Stand] [Feature Stand] [Feature Stand] [Feature Stand]
+           ↓           ↓          ↓           ↓
+         QA          QA         QA          QA
+           ↓           ↓          ↓           ↓
+      Code Review  Code Review Code Review Code Review
+           ↓           ↓          ↓           ↓
+        Merge to dev (parallel, independent)
+```
+
+### Summary
+
+This git branching strategy enables:
+
+✅ **Parallel Development**: Four teams work independently on feature branches  
+✅ **Isolated Testing**: Feature stands provide complete environments for QA  
+✅ **Dynamic Deployment**: Infrastructure automatically selects correct branch per service  
+✅ **No Blocking**: Teams don't block each other's development or releases  
+✅ **Quality Gates**: Code review and QA happen before merge to `dev` or `main`  
+✅ **Traceability**: Branch names link to Jira tickets (CORE-100, RETAIL-250, etc.)
+
+***
+
 ## Release Pipeline & Automation
 
 ### CI/CD Pipeline - Mandatory Checks
