@@ -24,7 +24,8 @@ Perfect! Now I have comprehensive information about Kafka Streams patterns, team
 5. [Kafka & Event-Driven Communication](#kafka--event-driven-communication)
 6. [Deployment Process Overview](#deployment-process-overview)
 7. [Git Branching Strategy & Feature Stand Deployment](#git-branching-strategy--feature-stand-deployment)
-8. [Release Pipeline & Automation](#release-pipeline--automation)
+8. [Git Branching Strategy & Feature Flags Deployment](#git-branching-strategy--feature-flags-deployment)
+9. [Release Pipeline & Automation](#release-pipeline--automation)
 9. [Database Migrations Strategy](#database-migrations-strategy)
 10. [Release Checklist & Management](#release-checklist--management)
 11. [Incident Management Process](#incident-management-process)
@@ -1661,6 +1662,570 @@ This git branching strategy enables:
 ✅ **No Blocking**: Teams don't block each other's development or releases  
 ✅ **Quality Gates**: Code review and QA happen before merge to `dev` or `main`  
 ✅ **Traceability**: Branch names link to Jira tickets (CORE-100, RETAIL-250, etc.)
+
+***
+
+## Git Branching Strategy & Feature Flags Deployment
+
+### Overview
+
+This section defines the git branching strategy and feature flags deployment process for managing parallel development across four cross-functional teams (Retail, Core, AML, Redesign). The strategy enables teams to work independently while maintaining code quality and enabling parallel QA and release processes using feature flags for safe, gradual feature rollouts.
+
+### Branch Structure
+
+#### Visual Git Branch Hierarchy
+
+```mermaid
+graph TD
+    Initial[Initial Commit] --> Main[main branch]
+    Main --> Production[Production]
+    Main --> Dev[dev branch]
+    Dev --> Integration[Integration]
+    Dev --> CORE[feature-CORE-100]
+    Dev --> RETAIL[feature-RETAIL-250]
+    Dev --> AML[feature-AML-75]
+    Dev --> REDESIGN[feature-REDESIGN-42]
+    CORE --> CoreWork[Core Team Work]
+    RETAIL --> RetailWork[Retail Team Work]
+    AML --> AMLWork[AML Team Work]
+    REDESIGN --> RedesignWork[Redesign Team Work]
+    CoreWork --> Dev
+    RetailWork --> Dev
+    AMLWork --> Dev
+    RedesignWork --> Dev
+    Dev --> Integrated1[Integrated CORE-100]
+    Dev --> Integrated2[Integrated RETAIL-250]
+    Dev --> Main
+    Main --> Release[Release to Production<br/>with Feature Flags]
+    
+    style Initial fill:#4a90e2
+    style Main fill:#50c878
+    style Dev fill:#ffa500
+    style Production fill:#50c878
+    style Release fill:#50c878
+```
+
+#### Core Branches
+
+```
+main (or master)
+├── Production-ready code only
+├── Protected branch (requires PR + approvals)
+├── Features deployed but controlled via feature flags
+└── Auto-deploys to Production after staging validation
+
+dev
+├── Integration branch for all teams
+├── All feature branches merge here first
+├── Auto-deploys to DEV environment
+├── Features enabled via feature flags for testing
+└── Used for daily integration testing
+```
+
+#### Feature Branches
+
+**Naming Convention:** `feature/{TEAM-PREFIX}-{TICKET-NUMBER}-{short-description}`
+
+**Team Prefixes:**
+- **CORE**: Core Team (authentication, payments, user management)
+- **RETAIL**: Retail Team (customer-facing features, checkout, catalog)
+- **AML**: AML Team (anti-money laundering, compliance)
+- **REDESIGN**: Redesign Team (UI modernization, frontend integration)
+
+**Examples:**
+```
+feature/CORE-100-implement-oauth2
+feature/RETAIL-250-add-product-search
+feature/AML-75-enhance-kyc-checks
+feature/REDESIGN-42-update-checkout-ui
+```
+
+**Branch Lifecycle:**
+1. Created from `dev` branch
+2. Developer works on feature with feature flag integration
+3. PR created to `dev` (for integration) or `main` (for direct production path)
+4. After merge, code is deployed but feature remains disabled until QA approval
+5. Feature flag enables gradual rollout after QA validation
+
+### Feature Flags Deployment Process
+
+#### Concept
+
+**Feature flags** (also known as feature toggles) are a software development technique that allows teams to deploy code to production while keeping new features disabled until they're ready for release. When a developer implements a feature with feature flags:
+
+1. Code is merged and deployed to shared environments (dev/staging/prod)
+2. Feature flag service (e.g., LaunchDarkly, Unleash, custom solution) controls feature visibility
+3. Features can be enabled for specific users, environments, or percentage rollouts
+4. QA testing happens in shared environments with feature flags enabled
+5. Gradual rollout to production without code redeployment
+
+#### Visual Feature Flags Deployment Flow
+
+```mermaid
+flowchart TD
+    A[Developer creates feature branch<br/>feature/CORE-100-oauth2] --> B[Implement Feature<br/>with Feature Flag Integration]
+    B --> C[Push to GitLab]
+    C --> D[Create PR to dev/main]
+    D --> E[Code Review]
+    E --> F{Code Review<br/>Approved?}
+    F -->|No| G[Developer fixes issues]
+    G --> C
+    F -->|Yes| H[Merge to dev/main]
+    H --> I[CI/CD Pipeline<br/>Builds & Deploys]
+    I --> J[Deploy to DEV Environment<br/>Feature Flag: DISABLED by default]
+    J --> K[Create Feature Flag<br/>feature.core-100-oauth2]
+    K --> L[Enable Feature Flag<br/>for QA Team Only]
+    L --> M[QA Testing in DEV Environment<br/>with Feature Flag Enabled]
+    M --> N{QA Approved?}
+    N -->|No| O[Developer fixes issues<br/>and updates code]
+    O -->|Fix and redeploy| C
+    N -->|Yes| P[Enable Feature Flag<br/>in Staging Environment]
+    P --> Q[QA Testing in Staging]
+    Q --> R{Staging QA<br/>Approved?}
+    R -->|No| O
+    R -->|Yes| S[Enable Feature Flag<br/>in Production<br/>Gradual Rollout: 10%]
+    S --> T[Monitor Metrics & Errors]
+    T --> U{Production<br/>Healthy?}
+    U -->|No| V[Disable Feature Flag<br/>Rollback without redeploy]
+    V --> O
+    U -->|Yes| W[Gradual Rollout<br/>10% → 50% → 100%]
+    W --> X[Feature Fully Enabled]
+    
+    style A fill:#e1f5ff
+    style K fill:#c8e6c9
+    style M fill:#fff9c4
+    style S fill:#ffccbc
+    style X fill:#4caf50
+```
+
+#### Workflow
+
+```
+Developer completes feature work with feature flag integration
+    ↓
+Developer creates feature branch: feature/CORE-100-oauth2
+    ↓
+Developer implements feature with feature flag checks:
+  - Code wrapped in feature flag conditionals
+  - Feature flag key: feature.core-100-oauth2
+  - Default state: DISABLED
+    ↓
+Developer pushes branch to GitLab
+    ↓
+Developer creates PR to dev/main
+    ↓
+Code Review → Merge to dev/main
+    ↓
+CI/CD Pipeline:
+  - Builds application
+  - Runs tests
+  - Deploys to DEV environment
+  - Feature flag created in feature flag service
+  - Feature flag state: DISABLED (default)
+    ↓
+QA Team enables feature flag for testing:
+  - Feature flag service: Enable for QA user group
+  - Or enable for DEV environment only
+    ↓
+QA performs testing in DEV environment with feature enabled
+    ↓
+After QA approval → Enable in Staging
+    ↓
+Staging QA testing with feature enabled
+    ↓
+After Staging approval → Gradual Production Rollout:
+  - Enable for 10% of users
+  - Monitor metrics, errors, performance
+  - If healthy: Increase to 50%
+  - If healthy: Increase to 100%
+  - If issues: Disable flag (instant rollback)
+    ↓
+Feature fully enabled in production
+    ↓
+After validation period: Remove feature flag code (technical debt cleanup)
+```
+
+### Parallel Development Workflow
+
+#### Visual Parallel Development Scenario
+
+```mermaid
+graph TB
+    subgraph "Repository: user-service"
+        US_DEV[dev branch<br/>All features merged]
+        US_CORE[feature/CORE-100-oauth2<br/>Core Team - Merged ✅]
+        US_RETAIL[feature/RETAIL-250-product-search<br/>Retail Team - Merged ✅]
+    end
+    
+    subgraph "Repository: order-service"
+        OS_DEV[dev branch<br/>All features merged]
+        OS_CORE[feature/CORE-100-oauth2<br/>Core Team - Merged ✅]
+        OS_RETAIL[feature/RETAIL-250-product-search<br/>Retail Team - Merged ✅]
+    end
+    
+    subgraph "DEV Environment (Shared)"
+        DEV_ENV[DEV Environment<br/>All services deployed]
+        DEV_CORE[feature.core-100-oauth2<br/>Flag: ENABLED for QA]
+        DEV_RETAIL[feature.retail-250-search<br/>Flag: ENABLED for QA]
+        DEV_OTHER[Other features<br/>Flag: DISABLED]
+    end
+    
+    subgraph "Feature Flag Service"
+        FF_SERVICE[Feature Flag Service<br/>LaunchDarkly/Unleash/Custom]
+        FF_CORE[feature.core-100-oauth2<br/>Enabled: QA Group]
+        FF_RETAIL[feature.retail-250-search<br/>Enabled: QA Group]
+    end
+    
+    subgraph "QA Teams"
+        QA_CORE[Core Team QA<br/>Testing CORE-100<br/>Flag Enabled]
+        QA_RETAIL[Retail Team QA<br/>Testing RETAIL-250<br/>Flag Enabled]
+    end
+    
+    US_CORE --> DEV_ENV
+    OS_CORE --> DEV_ENV
+    US_RETAIL --> DEV_ENV
+    OS_RETAIL --> DEV_ENV
+    
+    DEV_ENV --> DEV_CORE
+    DEV_ENV --> DEV_RETAIL
+    DEV_ENV --> DEV_OTHER
+    
+    FF_SERVICE --> FF_CORE
+    FF_SERVICE --> FF_RETAIL
+    FF_CORE --> DEV_CORE
+    FF_RETAIL --> DEV_RETAIL
+    
+    DEV_CORE --> QA_CORE
+    DEV_RETAIL --> QA_RETAIL
+    
+    style DEV_ENV fill:#e3f2fd
+    style FF_SERVICE fill:#fff3e0
+    style QA_CORE fill:#c8e6c9
+    style QA_RETAIL fill:#c8e6c9
+    style US_CORE fill:#bbdefb
+    style OS_CORE fill:#bbdefb
+    style US_RETAIL fill:#ffe0b2
+    style OS_RETAIL fill:#ffe0b2
+```
+
+#### Scenario: Multiple Teams Working on Related Features
+
+**Example:** Core Team (CORE-100) and Retail Team (RETAIL-250) both modify `user-service` and `order-service`.
+
+**Branch State:**
+```
+user-service repository:
+  ├── dev (integration branch)
+  ├── feature/CORE-100-oauth2 (Core Team) - Merged ✅
+  └── feature/RETAIL-250-product-search (Retail Team) - Merged ✅
+
+order-service repository:
+  ├── dev
+  ├── feature/CORE-100-oauth2 (Core Team) - Merged ✅
+  └── feature/RETAIL-250-product-search (Retail Team) - Merged ✅
+```
+
+**Feature Flags Deployment:**
+
+1. **Both features merged to dev:**
+   - `user-service`: Contains both CORE-100 and RETAIL-250 code ✅
+   - `order-service`: Contains both CORE-100 and RETAIL-250 code ✅
+   - All code deployed to shared DEV environment
+
+2. **Feature flags control visibility:**
+   - `feature.core-100-oauth2`: Enabled for Core Team QA group
+   - `feature.retail-250-search`: Enabled for Retail Team QA group
+   - Both features can be tested independently in the same environment
+
+3. **Parallel testing in shared environment:**
+   - Core Team QA sees only CORE-100 feature (flag enabled for them)
+   - Retail Team QA sees only RETAIL-250 feature (flag enabled for them)
+   - No environment conflicts: Same codebase, different feature visibility
+
+4. **Gradual production rollout:**
+   - CORE-100: Rollout to 10% → 50% → 100% of users
+   - RETAIL-250: Rollout to 10% → 50% → 100% of users
+   - Independent rollout schedules per feature
+
+### Best Practices
+
+#### Branch Management
+
+1. **Always create feature branches from `dev`:**
+   ```bash
+   git checkout dev
+   git pull origin dev
+   git checkout -b feature/CORE-100-oauth2
+   ```
+
+2. **Keep feature branches short-lived:**
+   - Merge to `dev` within 1-2 weeks
+   - Code can be merged even if feature isn't ready for users
+   - Feature flag keeps it disabled until ready
+
+3. **Regularly sync with `dev`:**
+   ```bash
+   git checkout feature/CORE-100-oauth2
+   git merge dev  # or git rebase dev
+   ```
+
+4. **Use descriptive branch names:**
+   - ✅ Good: `feature/CORE-100-implement-oauth2`
+   - ❌ Bad: `feature/oauth2` (missing team prefix and ticket)
+
+#### Feature Flag Implementation
+
+1. **Feature flag naming convention:**
+   - Use lowercase with dots: `feature.core-100-oauth2`
+   - Include team prefix and ticket number
+   - Match branch naming for traceability
+
+2. **Code structure with feature flags:**
+   ```java
+   // Example: Java/Spring Boot
+   @Autowired
+   private FeatureFlagService featureFlagService;
+   
+   public void processOAuth2() {
+       if (featureFlagService.isEnabled("feature.core-100-oauth2", userId)) {
+           // New OAuth2 implementation
+           newOAuth2Service.authenticate();
+       } else {
+           // Legacy authentication
+           legacyAuthService.authenticate();
+       }
+   }
+   ```
+
+3. **Feature flag lifecycle:**
+   - Create flag when starting feature development
+   - Default state: DISABLED
+   - Enable for QA/testing environments
+   - Gradual production rollout (10% → 50% → 100%)
+   - Remove flag code after feature is stable (technical debt cleanup)
+
+4. **Feature flag best practices:**
+   - Keep feature flag logic simple and testable
+   - Document feature flag usage in code comments
+   - Use feature flags for user-facing features, not infrastructure changes
+   - Monitor feature flag performance and errors
+
+#### Feature Flag Management
+
+1. **Feature flag service selection:**
+   - **LaunchDarkly**: Enterprise-grade, advanced targeting
+   - **Unleash**: Open-source, self-hosted option
+   - **Custom solution**: Simple key-value store with API
+   - Choose based on team size and requirements
+
+2. **Feature flag organization:**
+   - Group flags by team: `core.*`, `retail.*`, `aml.*`, `redesign.*`
+   - Use consistent naming: `feature.{team}-{ticket}-{description}`
+   - Document flag purpose and rollout plan in feature flag service
+
+3. **Testing with feature flags:**
+   - Test both enabled and disabled states
+   - Test gradual rollout scenarios (percentage-based)
+   - Test user-specific targeting
+   - Integration tests should toggle flags programmatically
+
+4. **Monitoring and observability:**
+   - Track feature flag evaluation metrics
+   - Monitor error rates when flags are enabled
+   - Set up alerts for unexpected flag states
+   - Log feature flag decisions for debugging
+
+#### Parallel Release Management
+
+1. **Team Independence:**
+   - Each team can merge features independently
+   - Features merged to `dev` are automatically deployed to DEV environment
+   - Feature flags enable independent testing and rollout
+   - Teams coordinate releases through daily standups
+
+2. **Release Coordination:**
+   - Use `dev` branch for integration testing
+   - Use feature flags for isolated feature testing in shared environments
+   - Coordinate production rollouts through Release Manager
+   - Gradual rollouts reduce risk of production issues
+
+3. **Conflict Resolution:**
+   - If two teams modify the same service, merge conflicts resolved in `dev` branch
+   - Feature flags allow both features to coexist in codebase
+   - Test conflicting features independently using feature flags
+   - Daily standups to identify potential conflicts early
+
+4. **Production Rollout Strategy:**
+   - Start with 10% of users (canary deployment)
+   - Monitor for 24-48 hours
+   - If healthy: Increase to 50%
+   - Monitor for 24-48 hours
+   - If healthy: Increase to 100%
+   - If issues detected: Disable flag immediately (instant rollback)
+
+### Complete Git Workflow Diagram
+
+```mermaid
+flowchart TD
+    subgraph "Production"
+        MAIN[main branch<br/>Production-ready code<br/>Features controlled by flags]
+    end
+    
+    subgraph "Integration"
+        DEV[dev branch<br/>Integration & Testing<br/>Features controlled by flags]
+    end
+    
+    subgraph "Feature Branches"
+        CORE[feature/CORE-100-oauth2<br/>Core Team]
+        RETAIL[feature/RETAIL-250-product-search<br/>Retail Team]
+        AML[feature/AML-75-kyc-checks<br/>AML Team]
+        REDESIGN[feature/REDESIGN-42-checkout-ui<br/>Redesign Team]
+    end
+    
+    subgraph "Feature Flag Service"
+        FF_SERVICE[Feature Flag Service<br/>LaunchDarkly/Unleash]
+        FF_CORE[feature.core-100-oauth2]
+        FF_RETAIL[feature.retail-250-search]
+        FF_AML[feature.aml-75-kyc]
+        FF_REDESIGN[feature.redesign-42-checkout]
+    end
+    
+    subgraph "QA Testing"
+        QA_CORE[QA: Core Team<br/>Flag Enabled]
+        QA_RETAIL[QA: Retail Team<br/>Flag Enabled]
+        QA_AML[QA: AML Team<br/>Flag Enabled]
+        QA_REDESIGN[QA: Redesign Team<br/>Flag Enabled]
+    end
+    
+    subgraph "Code Review"
+        CR_CORE[Code Review: CORE-100]
+        CR_RETAIL[Code Review: RETAIL-250]
+        CR_AML[Code Review: AML-75]
+        CR_REDESIGN[Code Review: REDESIGN-42]
+    end
+    
+    subgraph "Environments"
+        ENV_DEV[DEV Environment<br/>Auto-deploy from dev<br/>Shared environment]
+        ENV_STAGING[Staging Environment<br/>Release Manager approval<br/>Shared environment]
+        ENV_PROD[Production Environment<br/>Gradual rollout via flags<br/>Shared environment]
+    end
+    
+    CORE -->|PR| CR_CORE
+    RETAIL -->|PR| CR_RETAIL
+    AML -->|PR| CR_AML
+    REDESIGN -->|PR| CR_REDESIGN
+    
+    CR_CORE -->|Merge| DEV
+    CR_RETAIL -->|Merge| DEV
+    CR_AML -->|Merge| DEV
+    CR_REDESIGN -->|Merge| DEV
+    
+    DEV -->|Auto-deploy| ENV_DEV
+    ENV_DEV -->|Manual promotion| ENV_STAGING
+    ENV_STAGING -->|After validation| ENV_PROD
+    ENV_PROD --> MAIN
+    
+    FF_SERVICE --> FF_CORE
+    FF_SERVICE --> FF_RETAIL
+    FF_SERVICE --> FF_AML
+    FF_SERVICE --> FF_REDESIGN
+    
+    FF_CORE -->|Enable for QA| QA_CORE
+    FF_RETAIL -->|Enable for QA| QA_RETAIL
+    FF_AML -->|Enable for QA| QA_AML
+    FF_REDESIGN -->|Enable for QA| QA_REDESIGN
+    
+    QA_CORE -->|Approved| ENV_DEV
+    QA_RETAIL -->|Approved| ENV_DEV
+    QA_AML -->|Approved| ENV_DEV
+    QA_REDESIGN -->|Approved| ENV_DEV
+    
+    FF_CORE -->|Gradual Rollout| ENV_PROD
+    FF_RETAIL -->|Gradual Rollout| ENV_PROD
+    FF_AML -->|Gradual Rollout| ENV_PROD
+    FF_REDESIGN -->|Gradual Rollout| ENV_PROD
+    
+    style MAIN fill:#ffcdd2
+    style DEV fill:#c8e6c9
+    style CORE fill:#bbdefb
+    style RETAIL fill:#ffe0b2
+    style AML fill:#f8bbd0
+    style REDESIGN fill:#d1c4e9
+    style FF_SERVICE fill:#fff3e0
+    style QA_CORE fill:#c8e6c9
+    style QA_RETAIL fill:#c8e6c9
+    style QA_AML fill:#c8e6c9
+    style QA_REDESIGN fill:#c8e6c9
+```
+
+#### Text-Based Workflow Summary
+
+```
+                    main (Production)
+                       ↑
+                       │ (After QA + Code Review)
+                       │ Features deployed but controlled by flags
+                       │
+                    dev (Integration)
+                 ↙  ↓  ↘  ↙  ↓  ↘
+        feature/   feature/   feature/   feature/
+        CORE-100   RETAIL-250  AML-75    REDESIGN-42
+           ↓           ↓          ↓           ↓
+      Code Review  Code Review Code Review Code Review
+           ↓           ↓          ↓           ↓
+        Merge to dev (parallel, independent)
+           ↓           ↓          ↓           ↓
+    [Feature Flags] [Feature Flags] [Feature Flags] [Feature Flags]
+           ↓           ↓          ↓           ↓
+    Enable for QA  Enable for QA Enable for QA Enable for QA
+           ↓           ↓          ↓           ↓
+         QA          QA         QA          QA
+           ↓           ↓          ↓           ↓
+    Gradual Rollout Gradual Rollout Gradual Rollout Gradual Rollout
+           ↓           ↓          ↓           ↓
+    Production (10% → 50% → 100%)
+```
+
+### Feature Flags vs Feature Stands: When to Use Each
+
+#### Use Feature Flags When:
+- ✅ You want to test in production-like shared environments
+- ✅ You need instant rollback capability without redeployment
+- ✅ You want gradual rollout to production (canary deployments)
+- ✅ You need A/B testing capabilities
+- ✅ Resource constraints limit isolated environment creation
+- ✅ Features can coexist in the same codebase
+- ✅ You want to merge code early and release later
+
+#### Use Feature Stands When:
+- ✅ You need completely isolated environments for testing
+- ✅ Features have conflicting infrastructure requirements
+- ✅ You need to test with different service versions simultaneously
+- ✅ Features require significant infrastructure changes
+- ✅ You have sufficient resources for multiple environments
+- ✅ You want to test before merging to main branches
+
+#### Hybrid Approach:
+Many organizations use both strategies:
+- **Feature Stands** for early development and integration testing
+- **Feature Flags** for production rollouts and gradual releases
+- Feature stands validate features before merge
+- Feature flags control production releases after merge
+
+### Summary
+
+This git branching strategy with feature flags enables:
+
+✅ **Parallel Development**: Four teams work independently on feature branches  
+✅ **Early Integration**: Code merged early, features controlled by flags  
+✅ **Shared Environments**: Testing in shared dev/staging/prod environments  
+✅ **Instant Rollback**: Disable features without code redeployment  
+✅ **Gradual Rollouts**: Safe production releases (10% → 50% → 100%)  
+✅ **No Blocking**: Teams don't block each other's development or releases  
+✅ **Quality Gates**: Code review and QA happen before feature enablement  
+✅ **Traceability**: Branch names and feature flags link to Jira tickets (CORE-100, RETAIL-250, etc.)  
+✅ **A/B Testing**: Test different feature variations with feature flags  
+✅ **Resource Efficiency**: No need for separate environments per feature
 
 ***
 
