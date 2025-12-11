@@ -1669,9 +1669,7 @@ Release Notes Generated (Jira → Confluence)
 <p>This section defines the git branching strategy and feature stand deployment process for managing parallel development across four cross-functional teams (Retail, Core, AML, Redesign). The strategy enables teams to work independently while maintaining code quality and enabling parallel QA and release processes.</p>
 <h3 id="branch-structure">Branch Structure</h3>
 <h4 id="visual-git-branch-hierarchy">Visual Git Branch Hierarchy</h4>
-<div class="mermaid">
-%%{init: {'gitGraph': {'mainBranchName': 'main'}}}%%
-gitgraph
+<div class="mermaid">gitgraph
     commit id: "Initial"
     branch main
     checkout main
@@ -1679,25 +1677,25 @@ gitgraph
     branch dev
     checkout dev
     commit id: "Integration"
-    branch "feature/CORE-100"
-    checkout "feature/CORE-100"
+    branch feature-CORE-100
+    checkout feature-CORE-100
     commit id: "Core Team Work"
     checkout dev
-    branch "feature/RETAIL-250"
-    checkout "feature/RETAIL-250"
+    branch feature-RETAIL-250
+    checkout feature-RETAIL-250
     commit id: "Retail Team Work"
     checkout dev
-    branch "feature/AML-75"
-    checkout "feature/AML-75"
+    branch feature-AML-75
+    checkout feature-AML-75
     commit id: "AML Team Work"
     checkout dev
-    branch "feature/REDESIGN-42"
-    checkout "feature/REDESIGN-42"
+    branch feature-REDESIGN-42
+    checkout feature-REDESIGN-42
     commit id: "Redesign Team Work"
     checkout dev
-    merge "feature/CORE-100"
+    merge feature-CORE-100
     commit id: "Integrated CORE-100"
-    merge "feature/RETAIL-250"
+    merge feature-RETAIL-250
     commit id: "Integrated RETAIL-250"
     checkout main
     merge dev

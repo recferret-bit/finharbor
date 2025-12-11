@@ -1207,7 +1207,6 @@ This section defines the git branching strategy and feature stand deployment pro
 #### Visual Git Branch Hierarchy
 
 ```mermaid
-%%{init: {'gitGraph': {'mainBranchName': 'main'}}}%%
 gitgraph
     commit id: "Initial"
     branch main
@@ -1216,25 +1215,25 @@ gitgraph
     branch dev
     checkout dev
     commit id: "Integration"
-    branch "feature/CORE-100"
-    checkout "feature/CORE-100"
+    branch feature-CORE-100
+    checkout feature-CORE-100
     commit id: "Core Team Work"
     checkout dev
-    branch "feature/RETAIL-250"
-    checkout "feature/RETAIL-250"
+    branch feature-RETAIL-250
+    checkout feature-RETAIL-250
     commit id: "Retail Team Work"
     checkout dev
-    branch "feature/AML-75"
-    checkout "feature/AML-75"
+    branch feature-AML-75
+    checkout feature-AML-75
     commit id: "AML Team Work"
     checkout dev
-    branch "feature/REDESIGN-42"
-    checkout "feature/REDESIGN-42"
+    branch feature-REDESIGN-42
+    checkout feature-REDESIGN-42
     commit id: "Redesign Team Work"
     checkout dev
-    merge "feature/CORE-100"
+    merge feature-CORE-100
     commit id: "Integrated CORE-100"
-    merge "feature/RETAIL-250"
+    merge feature-RETAIL-250
     commit id: "Integrated RETAIL-250"
     checkout main
     merge dev
