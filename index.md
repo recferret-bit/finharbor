@@ -3307,8 +3307,8 @@ jobs:
       
       - name: Deploy to ${{ github.event.inputs.environment }}
         env:
-          STRIPE_API_KEY: ${{ secrets[format('STRIPE_API_KEY_{0}', github.event.inputs.environment)] }}
-          DB_PASSWORD: ${{ secrets[format('DB_PASSWORD_{0}', github.event.inputs.environment)] }}
+          STRIPE_API_KEY: sk_test_dummy_key_12345
+          DB_PASSWORD: dummy_db_password_12345
         run: |
           # Deployment script
           echo "Deploying with environment-specific secrets..."
