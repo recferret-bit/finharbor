@@ -12,6 +12,7 @@ Perfect! Now I have comprehensive information about Kafka Streams patterns, team
 - **Core Team** (2 backend developers) - Larger, complex domain  
 - **AML Team** (2 backend developers) - Smaller, specialized domain
 - **Redesign Team** (1 backend developer) - Smaller, UI-focused domain
+- **OCTO Team** (5 backend developers) - Larger, complex domain
 
 ***
 
@@ -36,7 +37,7 @@ Perfect! Now I have comprehensive information about Kafka Streams patterns, team
 
 ## Executive Summary
 
-This guide addresses critical organizational challenges across four cross-functional teams (Retail, Core, AML, Redesign) working on the same microservices platform using Kanban methodology.
+This guide addresses critical organizational challenges across five cross-functional teams (Retail, Core, AML, Redesign, OCTO) working on the same microservices platform using Kanban methodology.
 
 ### Technology Stack
 
@@ -74,6 +75,7 @@ This guide addresses critical organizational challenges across four cross-functi
 | **Core** | 2 devs | High | Authentication, payments, user management | Team Size × 1.5 = **3 items** |
 | **AML** | 2 devs | Medium | Anti-money laundering, compliance | Team Size × 1.5 = **3 items** |
 | **Redesign** | 1 dev | Low-Medium | UI modernization, frontend integration | Team Size × 2.0 = **2 items** |
+| **OCTO** | 5 devs | High | Platform infrastructure, DevOps automation, system integration | Team Size × 1.5 = **7-8 items** |
 
 **WIP Limit Formula**:[8][9]
 ```
@@ -92,7 +94,8 @@ Swimlanes (by Team):
 ├── Retail Team (3 devs) - High complexity
 ├── Core Team (2 devs) - High complexity  
 ├── AML Team (2 devs) - Medium complexity
-└── Redesign Team (1 dev) - Low-Medium complexity
+├── Redesign Team (1 dev) - Low-Medium complexity
+└── OCTO Team (5 devs) - High complexity
 
 Columns (Workflow States):
 [Backlog] → [Ready] → [API Design] → [In Progress] → [Code Review] → [Testing] → [Done]
@@ -100,11 +103,11 @@ Columns (Workflow States):
 
 WIP Limits per Column (Total across all teams):
 - Backlog: No limit (prioritized by Product Owner)
-- Ready: 12 items (3 per team average)
-- API Design: 8 items (OpenAPI spec creation phase)
-- In Progress: 10 items (Retail:4-5, Core:3, AML:3, Redesign:2)
-- Code Review: 6 items (force fast reviews to prevent bottleneck)
-- Testing: 8 items (QA capacity)
+- Ready: 15 items (3 per team average)
+- API Design: 10 items (OpenAPI spec creation phase)
+- In Progress: 17 items (Retail:4-5, Core:3, AML:3, Redesign:2, OCTO:7-8)
+- Code Review: 8 items (force fast reviews to prevent bottleneck)
+- Testing: 10 items (QA capacity)
 - Done: No limit (archived weekly)
 ```
 
@@ -140,6 +143,14 @@ AML Team (2 devs): 3 items max
 Redesign Team (1 dev): 2 items max
 ├── 1 × 2.0 = 2 (simpler UI work, less backend complexity)
 └── Developer 1: 1-2 items
+
+OCTO Team (5 devs): 7-8 items max
+├── 5 × 1.5 = 7.5 (high complexity, platform infrastructure)
+├── Developer 1: 1-2 items
+├── Developer 2: 1-2 items
+├── Developer 3: 1-2 items
+├── Developer 4: 1-2 items
+└── Developer 5: 1-2 items
 ```
 
 **Rule:** No team can exceed their WIP limit. If limit reached, **help other teams** or **clear code reviews** before pulling new work.[14][9]
@@ -163,7 +174,7 @@ Tag all Jira issues with Class of Service to guide pull decisions:[15]
 
 ### Kanban Daily Standup (15 minutes, 9:00 AM UTC)
 
-**Format:** All 4 teams participate (8 backend devs total)
+**Format:** All 5 teams participate (13 backend devs total)
 
 **Agenda per team (3 min each):**
 
@@ -198,6 +209,14 @@ Tag all Jira issues with Class of Service to guide pull decisions:[15]
 **Redesign Team** (1 dev, WIP: 1/2):
 ✅ Pulling: REDESIGN-123 (API integration for new checkout UI)
 🔒 Active Services: None (API Design phase for new work)
+🚀 Releasing: None
+❌ Blocked: None
+
+**OCTO Team** (5 devs, WIP: 6/8):
+✅ Pulling: OCTO-101 (infrastructure-service/CI/CD improvements)
+🔒 Active Services: infrastructure-service (In Progress), monitoring-service (Code Review)
+🚀 Releasing: OCTO-95 (deployment-service/automated rollback)
+❌ Blocked: None
 🚀 Releasing: None
 ❌ Blocked: REDESIGN-123 waiting for Retail's checkout-service API spec (RETAIL-456)
 
@@ -275,14 +294,19 @@ Create `.github/CODEOWNERS` in repository root:[19][20][21]
 
 /services/api-gateway/ @redesign-team-backend @platform-lead
 
+/services/infrastructure-service/ @octo-team-backend
+/services/monitoring-service/ @octo-team-backend
+/services/deployment-service/ @octo-team-backend
+/services/config-service/ @octo-team-backend
+
 # Shared components require multi-team approval
 /shared/auth-library/ @core-team-backend @retail-team-backend
 /shared/payment-library/ @core-team-backend @aml-team-backend
-/shared/api-contracts/ @retail-team-backend @core-team-backend @aml-team-backend @redesign-team-backend
+/shared/api-contracts/ @retail-team-backend @core-team-backend @aml-team-backend @redesign-team-backend @octo-team-backend
 
 # Kafka topics and schemas (multi-team impact)
-/kafka/topics/ @platform-lead @core-team-backend @retail-team-backend
-/kafka/schemas/ @platform-lead @core-team-backend @retail-team-backend
+/kafka/topics/ @platform-lead @core-team-backend @retail-team-backend @octo-team-backend
+/kafka/schemas/ @platform-lead @core-team-backend @retail-team-backend @octo-team-backend
 
 # Database migrations - requires DBA approval
 **/migrations/*.sql @dba-team @platform-lead
@@ -302,7 +326,7 @@ Create `.github/CODEOWNERS` in repository root:[19][20][21]
 | **Shared library** | 2 approvals from different teams | Auth library change → 1 Core + 1 Retail approval |
 | **Kafka topic/schema** | Platform lead + 1 team lead | New Kafka topic → Platform lead + affected team approval |
 | **Database migration** | DBA + platform lead | Schema change → DBA + platform lead approval |
-| **API contract change** | All consuming teams | Payment API v2 → Core + Retail + AML approval |
+| **API contract change** | All consuming teams | Payment API v2 → Core + Retail + AML + OCTO approval |
 
 ***
 
@@ -960,6 +984,13 @@ aml.transaction.flagged
 aml.transaction.reviewed
 aml.risk-assessment.completed
 
+# OCTO Team topics
+octo.deployment.started
+octo.deployment.completed
+octo.infrastructure.updated
+octo.monitoring.alert
+octo.config.changed
+
 # Cross-team topics
 system.deployment.started
 system.deployment.completed
@@ -1081,11 +1112,13 @@ Add to `.github/CODEOWNERS`:
 /kafka/topics/retail.* @retail-team-backend
 /kafka/topics/core.* @core-team-backend
 /kafka/topics/aml.* @aml-team-backend
+/kafka/topics/octo.* @octo-team-backend
 /kafka/topics/system.* @platform-lead
 
 # Cross-team topics (multiple consumers)
 /kafka/topics/core.payment.* @core-team-backend @aml-team-backend
 /kafka/topics/retail.order.* @retail-team-backend @core-team-backend
+/kafka/topics/octo.deployment.* @octo-team-backend @platform-lead
 
 # Schema changes require schema registry admin approval
 /kafka/schemas/ @platform-lead @schema-admin
@@ -1580,6 +1613,7 @@ SELECT first_name, last_name FROM users LIMIT 10;
    - `team:core`
    - `team:aml`
    - `team:redesign`
+   - `team:octo`
 
 3. **Multi-Team Release Coordination:**
 
@@ -1591,6 +1625,7 @@ SELECT first_name, last_name FROM users LIMIT 10;
 - ✅ Retail Team (1 service: checkout-service)
 - ⏸️ AML Team (no deployments this release)
 - ⏸️ Redesign Team (frontend only, deployed separately)
+- ⏸️ OCTO Team (no deployments this release)
 
 ## Services Deploying
 | Service | Team | Version | API Changes | Kafka Changes | Dependencies |
@@ -1656,6 +1691,9 @@ SELECT first_name, last_name FROM users LIMIT 10;
 React with ✅ if your team is ready
 - Core Team: ___
 - Retail Team: ___
+- AML Team: ___
+- Redesign Team: ___
+- OCTO Team: ___
 - Platform: ___
 - Release Manager: ___
 ```
@@ -1763,9 +1801,14 @@ Week 4 (Jan 29-Feb 4):
   Primary: Redesign Team (@redesign-dev) + Platform (shared)
   Secondary: Core Team (@john-doe)
   Escalation: Platform Lead (@platform-lead)
+
+Week 5 (Feb 5-11):
+  Primary: OCTO Team (@octo-team-lead)
+  Secondary: Retail Team (@jane-smith)
+  Escalation: Platform Lead (@platform-lead)
 ```
 
-**Note:** Redesign Team (1 dev) has lighter on-call burden, paired with Platform for backup.
+**Note:** Redesign Team (1 dev) has lighter on-call burden, paired with Platform for backup. OCTO Team (5 devs) handles infrastructure incidents and can support other teams during deployments.
 
 ### Incident Response by Team
 
@@ -2114,6 +2157,13 @@ public PaymentResult processPayment(PaymentRequest request) {
 - Limited PagerDuty: Paired with Platform for on-call (lighter rotation)
 - Admin access: api-gateway, web-frontend repos
 - Read-only: All service repos (for API integration)
+
+**OCTO Team (5 devs):**
+- Full access: GitHub, Jira, Confluence, Datadog, PagerDuty, Kubernetes, ArgoCD
+- Admin access: infrastructure-service, monitoring-service, deployment-service, config-service repos
+- Platform admin: Kubernetes clusters, CI/CD pipelines, infrastructure automation
+- Kafka admin: octo.* topics, system.* topics
+- Read access: All service repos (for infrastructure monitoring and deployment support)
 
 ***
 
@@ -3282,6 +3332,7 @@ kafka-console-producer --topic retail.order.created --bootstrap-server kafka:909
 - Retail Team: @retail-team-lead
 - AML Team: @aml-team-lead
 - Redesign Team: @redesign-team-lead
+- OCTO Team: @octo-team-lead
 - Platform: @platform-lead
 
 **Escalation Path (SEV-1):**
@@ -3336,3 +3387,4 @@ kafka-console-producer --topic retail.order.created --bootstrap-server kafka:909
 - **Retail Team** (3 backend devs): product-catalog-service, cart-service, checkout-service, order-service
 - **AML Team** (2 backend devs): transaction-monitor-service, compliance-report-service
 - **Redesign Team** (1 backend dev): api-gateway, web-frontend
+- **OCTO Team** (5 backend devs): infrastructure-service, monitoring-service, deployment-service, config-service
