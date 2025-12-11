@@ -23,14 +23,15 @@ Perfect! Now I have comprehensive information about Kafka Streams patterns, team
 4. [API Development Standards (OpenAPI Required)](#api-development-standards-openapi-required)
 5. [Kafka & Event-Driven Communication](#kafka--event-driven-communication)
 6. [Deployment Process Overview](#deployment-process-overview)
-7. [Release Pipeline & Automation](#release-pipeline--automation)
-8. [Database Migrations Strategy](#database-migrations-strategy)
-9. [Release Checklist & Management](#release-checklist--management)
-10. [Incident Management Process](#incident-management-process)
-11. [Post-Incident Review (Postmortem)](#post-incident-review-postmortem)
-12. [Tools & Integration Recommendations](#tools--integration-recommendations)
-13. [Secure Git Data Practices](#secure-git-data-practices)
-14. [Knowledge Documentation Standards](#knowledge-documentation-standards)
+7. [Git Branching Strategy & Feature Stand Deployment](#git-branching-strategy--feature-stand-deployment)
+8. [Release Pipeline & Automation](#release-pipeline--automation)
+9. [Database Migrations Strategy](#database-migrations-strategy)
+10. [Release Checklist & Management](#release-checklist--management)
+11. [Incident Management Process](#incident-management-process)
+12. [Post-Incident Review (Postmortem)](#post-incident-review-postmortem)
+13. [Tools & Integration Recommendations](#tools--integration-recommendations)
+14. [Secure Git Data Practices](#secure-git-data-practices)
+15. [Knowledge Documentation Standards](#knowledge-documentation-standards)
 
 ***
 
