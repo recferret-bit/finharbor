@@ -1207,38 +1207,33 @@ This section defines the git branching strategy and feature stand deployment pro
 #### Visual Git Branch Hierarchy
 
 ```mermaid
-%%{init: {'gitGraph': {'mainBranchName': 'main'}}}%%
-gitgraph
-    commit id: "Initial"
-    branch main
-    checkout main
-    commit id: "Production"
-    branch dev
-    checkout dev
-    commit id: "Integration"
-    branch "feature/CORE-100"
-    checkout "feature/CORE-100"
-    commit id: "Core Team Work"
-    checkout dev
-    branch "feature/RETAIL-250"
-    checkout "feature/RETAIL-250"
-    commit id: "Retail Team Work"
-    checkout dev
-    branch "feature/AML-75"
-    checkout "feature/AML-75"
-    commit id: "AML Team Work"
-    checkout dev
-    branch "feature/REDESIGN-42"
-    checkout "feature/REDESIGN-42"
-    commit id: "Redesign Team Work"
-    checkout dev
-    merge "feature/CORE-100"
-    commit id: "Integrated CORE-100"
-    merge "feature/RETAIL-250"
-    commit id: "Integrated RETAIL-250"
-    checkout main
-    merge dev
-    commit id: "Release to Production"
+graph TD
+    Initial[Initial Commit] --> Main[main branch]
+    Main --> Production[Production]
+    Main --> Dev[dev branch]
+    Dev --> Integration[Integration]
+    Dev --> CORE[feature-CORE-100]
+    Dev --> RETAIL[feature-RETAIL-250]
+    Dev --> AML[feature-AML-75]
+    Dev --> REDESIGN[feature-REDESIGN-42]
+    CORE --> CoreWork[Core Team Work]
+    RETAIL --> RetailWork[Retail Team Work]
+    AML --> AMLWork[AML Team Work]
+    REDESIGN --> RedesignWork[Redesign Team Work]
+    CoreWork --> Dev
+    RetailWork --> Dev
+    AMLWork --> Dev
+    RedesignWork --> Dev
+    Dev --> Integrated1[Integrated CORE-100]
+    Dev --> Integrated2[Integrated RETAIL-250]
+    Dev --> Main
+    Main --> Release[Release to Production]
+    
+    style Initial fill:#4a90e2
+    style Main fill:#50c878
+    style Dev fill:#ffa500
+    style Production fill:#50c878
+    style Release fill:#50c878
 ```
 
 #### Core Branches
