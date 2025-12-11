@@ -345,6 +345,7 @@
       <li><a class="toc-link" href="#api-development-standards-openapi-required">API Standards &amp; Versioning</a></li>
       <li><a class="toc-link" href="#kafka-event-driven-communication">Kafka &amp; Events</a></li>
       <li><a class="toc-link" href="#deployment-process-overview">Deployment Process</a></li>
+      <li><a class="toc-link" href="#git-branching-strategy--feature-stand-deployment">Git Branching &amp; Feature Stands</a></li>
       <li><a class="toc-link" href="#release-pipeline-automation">Release Pipeline</a></li>
       <li><a class="toc-link" href="#database-migrations-strategy">DB Migrations</a></li>
       <li><a class="toc-link" href="#release-checklist-management">Release Management</a></li>
@@ -383,6 +384,7 @@
 <li><a href="#api-development-standards-openapi-required">API Development Standards (OpenAPI Required)</a></li>
 <li><a href="#kafka--event-driven-communication">Kafka &amp; Event-Driven Communication</a></li>
 <li><a href="#deployment-process-overview">Deployment Process Overview</a></li>
+<li><a href="#git-branching-strategy--feature-stand-deployment">Git Branching Strategy &amp; Feature Stand Deployment</a></li>
 <li><a href="#release-pipeline--automation">Release Pipeline &amp; Automation</a></li>
 <li><a href="#database-migrations-strategy">Database Migrations Strategy</a></li>
 <li><a href="#release-checklist--management">Release Checklist &amp; Management</a></li>
@@ -1661,6 +1663,437 @@ Slack Notification (team, version, API changes, Kafka topics)
     ↓
 Release Notes Generated (Jira → Confluence)
 </code></pre>
+<hr />
+<h2 id="git-branching-strategy--feature-stand-deployment">Git Branching Strategy &amp; Feature Stand Deployment</h2>
+<h3 id="overview">Overview</h3>
+<p>This section defines the git branching strategy and feature stand deployment process for managing parallel development across four cross-functional teams (Retail, Core, AML, Redesign). The strategy enables teams to work independently while maintaining code quality and enabling parallel QA and release processes.</p>
+<h3 id="branch-structure">Branch Structure</h3>
+<h4 id="visual-git-branch-hierarchy">Visual Git Branch Hierarchy</h4>
+<div class="mermaid">
+gitgraph
+    commit id: "Initial"
+    branch main
+    checkout main
+    commit id: "Production"
+    branch dev
+    checkout dev
+    commit id: "Integration"
+    branch feature/CORE-100
+    checkout feature/CORE-100
+    commit id: "Core Team Work"
+    checkout dev
+    branch feature/RETAIL-250
+    checkout feature/RETAIL-250
+    commit id: "Retail Team Work"
+    checkout dev
+    branch feature/AML-75
+    checkout feature/AML-75
+    commit id: "AML Team Work"
+    checkout dev
+    branch feature/REDESIGN-42
+    checkout feature/REDESIGN-42
+    commit id: "Redesign Team Work"
+    checkout dev
+    merge feature/CORE-100
+    commit id: "Integrated CORE-100"
+    merge feature/RETAIL-250
+    commit id: "Integrated RETAIL-250"
+    checkout main
+    merge dev
+    commit id: "Release to Production"
+</div>
+<h4 id="core-branches">Core Branches</h4>
+<pre><code>main (or master)
+├── Production-ready code only
+├── Protected branch (requires PR + approvals)
+└── Auto-deploys to Production after staging validation
+
+dev
+├── Integration branch for all teams
+├── All feature branches merge here first
+├── Auto-deploys to DEV environment
+└── Used for daily integration testing
+</code></pre>
+<h4 id="feature-branches">Feature Branches</h4>
+<p><strong>Naming Convention:</strong> <code>feature/{TEAM-PREFIX}-{TICKET-NUMBER}-{short-description}</code></p>
+<p><strong>Team Prefixes:</strong></p>
+<ul>
+<li><strong>CORE</strong>: Core Team (authentication, payments, user management)</li>
+<li><strong>RETAIL</strong>: Retail Team (customer-facing features, checkout, catalog)</li>
+<li><strong>AML</strong>: AML Team (anti-money laundering, compliance)</li>
+<li><strong>REDESIGN</strong>: Redesign Team (UI modernization, frontend integration)</li>
+</ul>
+<p><strong>Examples:</strong></p>
+<pre><code>feature/CORE-100-implement-oauth2
+feature/RETAIL-250-add-product-search
+feature/AML-75-enhance-kyc-checks
+feature/REDESIGN-42-update-checkout-ui
+</code></pre>
+<p><strong>Branch Lifecycle:</strong></p>
+<ol>
+<li>Created from <code>dev</code> branch</li>
+<li>Developer works on feature</li>
+<li>PR created to <code>dev</code> (for integration) or <code>main</code> (for direct production path)</li>
+<li>After merge, branch can be deleted (or kept for feature stand deployment)</li>
+</ol>
+<h3 id="feature-stand-deployment-process">Feature Stand Deployment Process</h3>
+<h4 id="concept">Concept</h4>
+<p>A <strong>feature stand</strong> is a fully functional, isolated environment created on-demand for testing cross-service features. When a developer deploys their feature branch to a feature stand, the infrastructure automatically:</p>
+<ol>
+<li>Creates a complete environment with all microservices</li>
+<li>Deploys each service from <code>dev</code> branch by default</li>
+<li><strong>Overrides</strong> to deploy from the feature branch if that branch exists in the service's repository</li>
+<li>Provides a unique URL for QA testing</li>
+</ol>
+<h4 id="visual-feature-stand-deployment-flow">Visual Feature Stand Deployment Flow</h4>
+<div class="mermaid">
+flowchart TD
+    A[Developer creates feature branch<br/>feature/CORE-100-oauth2] --> B[Push to GitLab]
+    B --> C[Click 'Deploy to Feature Stand'<br/>in GitLab UI]
+    C --> D[Infrastructure Automation<br/>Detects: CORE-100]
+    D --> E{Scan All Service Repos<br/>for branch: feature/CORE-100-*}
+    E --> F1[user-service<br/>Branch found?]
+    E --> F2[auth-service<br/>Branch found?]
+    E --> F3[payment-service<br/>Branch found?]
+    E --> F4[product-service<br/>Branch found?]
+    E --> F5[Other services...]
+    
+    F1 -->|Yes| G1["Deploy user-service<br/>from feature/CORE-100-*"]
+    F1 -->|No| H1["Deploy user-service<br/>from dev branch"]
+    
+    F2 -->|Yes| G2["Deploy auth-service<br/>from feature/CORE-100-*"]
+    F2 -->|No| H2["Deploy auth-service<br/>from dev branch"]
+    
+    F3 -->|Yes| G3["Deploy payment-service<br/>from feature/CORE-100-*"]
+    F3 -->|No| H3["Deploy payment-service<br/>from dev branch"]
+    
+    F4 -->|Yes| G4["Deploy product-service<br/>from feature/CORE-100-*"]
+    F4 -->|No| H4["Deploy product-service<br/>from dev branch"]
+    
+    F5 --> H5["Deploy other services<br/>from dev branch"]
+    
+    G1 --> I[Create Kubernetes Namespace<br/>feature-stand-core-100]
+    G2 --> I
+    G3 --> I
+    G4 --> I
+    H1 --> I
+    H2 --> I
+    H3 --> I
+    H4 --> I
+    H5 --> I
+    
+    I --> J[Configure Service Discovery<br/>Databases, Kafka Topics]
+    J --> K[Generate Feature Stand URL<br/>https://feature-stand-core-100.example.com]
+    K --> L[Notify QA Team<br/>with deployment details]
+    L --> M[QA Testing on Feature Stand]
+    M --> N{QA Approved?}
+    N -->|Yes| O[Move to Code Review]
+    N -->|No| P[Developer fixes issues<br/>and updates code]
+    P -->|Fix and redeploy| B
+    O --> Q[PR Created/Updated]
+    Q --> R[Code Review]
+    R --> S[Merge to dev/main]
+</div>
+<h4 id="workflow">Workflow</h4>
+<pre><code>Developer completes feature work
+    ↓
+Developer creates feature branch: feature/CORE-100-oauth2
+    ↓
+Developer pushes branch to GitLab
+    ↓
+Developer clicks "Deploy to Feature Stand" in GitLab UI
+    ↓
+Infrastructure Automation:
+  - Detects feature branch name: CORE-100
+  - Scans all service repositories for branch: feature/CORE-100-*
+  - Creates Kubernetes namespace: feature-stand-core-100
+  - For each service:
+    ├── If branch exists: feature/CORE-100-* → deploy from that branch
+    └── If branch doesn't exist: deploy from dev branch
+  - Configures service discovery, databases, Kafka topics
+  - Generates unique URL: https://feature-stand-core-100.example.com
+    ↓
+Feature Stand Ready
+    ↓
+QA Team receives notification with:
+  - Feature stand URL
+  - List of services deployed from feature branch
+  - List of services deployed from dev branch
+  - Branch names and commit SHAs
+    ↓
+QA performs testing on feature stand
+    ↓
+After QA approval → Move to Code Review
+    ↓
+PR created/updated → Code Review → Merge to dev/main
+</code></pre>
+<h3 id="parallel-development-workflow">Parallel Development Workflow</h3>
+<h4 id="visual-parallel-development-scenario">Visual Parallel Development Scenario</h4>
+<div class="mermaid">
+graph TB
+    subgraph "Repository: user-service"
+        US_DEV[dev branch]
+        US_CORE[feature/CORE-100-oauth2<br/>Core Team]
+        US_RETAIL[feature/RETAIL-250-product-search<br/>Retail Team]
+    end
+    
+    subgraph "Repository: order-service"
+        OS_DEV[dev branch]
+        OS_CORE[feature/CORE-100-oauth2<br/>Core Team]
+        OS_RETAIL[feature/RETAIL-250-product-search<br/>Retail Team]
+    end
+    
+    subgraph "Feature Stand: CORE-100"
+        FS_CORE[feature-stand-core-100<br/>Kubernetes Namespace]
+        FS_CORE_US[user-service<br/>from feature/CORE-100-oauth2 ✅]
+        FS_CORE_OS[order-service<br/>from feature/CORE-100-oauth2 ✅]
+        FS_CORE_OTHER[Other services<br/>from dev branch]
+        FS_CORE_URL[URL: feature-stand-core-100.example.com]
+    end
+    
+    subgraph "Feature Stand: RETAIL-250"
+        FS_RETAIL[feature-stand-retail-250<br/>Kubernetes Namespace]
+        FS_RETAIL_US[user-service<br/>from feature/RETAIL-250-product-search ✅]
+        FS_RETAIL_OS[order-service<br/>from feature/RETAIL-250-product-search ✅]
+        FS_RETAIL_OTHER[Other services<br/>from dev branch]
+        FS_RETAIL_URL[URL: feature-stand-retail-250.example.com]
+    end
+    
+    subgraph "QA Teams"
+        QA_CORE[Core Team QA<br/>Testing CORE-100]
+        QA_RETAIL[Retail Team QA<br/>Testing RETAIL-250]
+    end
+    
+    US_CORE --> FS_CORE_US
+    OS_CORE --> FS_CORE_OS
+    US_DEV --> FS_CORE_OTHER
+    OS_DEV --> FS_CORE_OTHER
+    
+    US_RETAIL --> FS_RETAIL_US
+    OS_RETAIL --> FS_RETAIL_OS
+    US_DEV --> FS_RETAIL_OTHER
+    OS_DEV --> FS_RETAIL_OTHER
+    
+    FS_CORE_US --> FS_CORE
+    FS_CORE_OS --> FS_CORE
+    FS_CORE_OTHER --> FS_CORE
+    FS_CORE --> FS_CORE_URL
+    FS_CORE_URL --> QA_CORE
+    
+    FS_RETAIL_US --> FS_RETAIL
+    FS_RETAIL_OS --> FS_RETAIL
+    FS_RETAIL_OTHER --> FS_RETAIL
+    FS_RETAIL --> FS_RETAIL_URL
+    FS_RETAIL_URL --> QA_RETAIL
+</div>
+<h4 id="scenario-multiple-teams-working-on-related-features">Scenario: Multiple Teams Working on Related Features</h4>
+<p><strong>Example:</strong> Core Team (CORE-100) and Retail Team (RETAIL-250) both modify <code>user-service</code> and <code>order-service</code>.</p>
+<p><strong>Branch State:</strong></p>
+<pre><code>user-service repository:
+  ├── dev (integration branch)
+  ├── feature/CORE-100-oauth2 (Core Team)
+  └── feature/RETAIL-250-product-search (Retail Team)
+
+order-service repository:
+  ├── dev
+  ├── feature/CORE-100-oauth2 (Core Team)
+  └── feature/RETAIL-250-product-search (Retail Team)
+</code></pre>
+<p><strong>Feature Stand Deployment:</strong></p>
+<ol>
+<li><strong>Core Team deploys CORE-100 feature stand:</strong>
+<ul>
+<li><code>user-service</code>: Deployed from <code>feature/CORE-100-oauth2</code> ✅</li>
+<li><code>order-service</code>: Deployed from <code>feature/CORE-100-oauth2</code> ✅</li>
+<li>All other services: Deployed from <code>dev</code> branch</li>
+</ul>
+</li>
+<li><strong>Retail Team deploys RETAIL-250 feature stand:</strong>
+<ul>
+<li><code>user-service</code>: Deployed from <code>feature/RETAIL-250-product-search</code> ✅</li>
+<li><code>order-service</code>: Deployed from <code>feature/RETAIL-250-product-search</code> ✅</li>
+<li>All other services: Deployed from <code>dev</code> branch</li>
+</ul>
+</li>
+<li><strong>Both feature stands run in parallel:</strong>
+<ul>
+<li><code>https://feature-stand-core-100.example.com</code> (Core Team QA)</li>
+<li><code>https://feature-stand-retail-250.example.com</code> (Retail Team QA)</li>
+</ul>
+</li>
+<li><strong>No conflicts:</strong> Each team tests independently on their isolated environment.</li>
+</ol>
+<h3 id="best-practices">Best Practices</h3>
+<h4 id="branch-management">Branch Management</h4>
+<ol>
+<li><strong>Always create feature branches from <code>dev</code>:</strong>
+<pre><code class="language-bash">git checkout dev
+git pull origin dev
+git checkout -b feature/CORE-100-oauth2
+</code></pre>
+</li>
+<li><strong>Keep feature branches short-lived:</strong>
+<ul>
+<li>Merge to <code>dev</code> within 1-2 weeks</li>
+<li>Delete branch after merge (unless needed for feature stand)</li>
+</ul>
+</li>
+<li><strong>Regularly sync with <code>dev</code>:</strong>
+<pre><code class="language-bash">git checkout feature/CORE-100-oauth2
+git merge dev  # or git rebase dev
+</code></pre>
+</li>
+<li><strong>Use descriptive branch names:</strong>
+<ul>
+<li>✅ Good: <code>feature/CORE-100-implement-oauth2</code></li>
+<li>❌ Bad: <code>feature/oauth2</code> (missing team prefix and ticket)</li>
+</ul>
+</li>
+</ol>
+<h4 id="feature-stand-management">Feature Stand Management</h4>
+<ol>
+<li><strong>Clean up feature stands after QA:</strong>
+<ul>
+<li>Feature stands consume resources</li>
+<li>Delete namespace after feature is merged to <code>dev</code> or <code>main</code></li>
+<li>Automate cleanup: Delete feature stands older than 7 days</li>
+</ul>
+</li>
+<li><strong>Document feature stand dependencies:</strong>
+<ul>
+<li>If feature requires specific service versions, document in PR description</li>
+<li>Use feature stand for integration testing, not unit testing</li>
+</ul>
+</li>
+<li><strong>Coordinate feature stand usage:</strong>
+<ul>
+<li>Limit concurrent feature stands per team (e.g., max 2 per team)</li>
+<li>Use feature stands for cross-service features, not single-service changes</li>
+</ul>
+</li>
+</ol>
+<h4 id="parallel-release-management">Parallel Release Management</h4>
+<ol>
+<li><strong>Team Independence:</strong>
+<ul>
+<li>Each team can release independently</li>
+<li>Features merged to <code>dev</code> are automatically deployed to DEV environment</li>
+<li>Teams coordinate releases through daily standups</li>
+</ul>
+</li>
+<li><strong>Release Coordination:</strong>
+<ul>
+<li>Use <code>dev</code> branch for integration testing</li>
+<li>Use feature stands for isolated feature testing</li>
+<li>Coordinate production releases through Release Manager</li>
+</ul>
+</li>
+<li><strong>Conflict Resolution:</strong>
+<ul>
+<li>If two teams modify the same service, merge conflicts resolved in <code>dev</code> branch</li>
+<li>Use feature stands to test conflicting changes in isolation first</li>
+<li>Daily standups to identify potential conflicts early</li>
+</ul>
+</li>
+</ol>
+<h3 id="complete-git-workflow-diagram">Complete Git Workflow Diagram</h3>
+<div class="mermaid">
+flowchart TD
+    subgraph "Production"
+        MAIN[main branch<br/>Production-ready code]
+    end
+    
+    subgraph "Integration"
+        DEV[dev branch<br/>Integration & Testing]
+    end
+    
+    subgraph "Feature Branches"
+        CORE[feature/CORE-100-oauth2<br/>Core Team]
+        RETAIL[feature/RETAIL-250-product-search<br/>Retail Team]
+        AML[feature/AML-75-kyc-checks<br/>AML Team]
+        REDESIGN[feature/REDESIGN-42-checkout-ui<br/>Redesign Team]
+    end
+    
+    subgraph "Feature Stands"
+        FS_CORE[Feature Stand: CORE-100<br/>feature-stand-core-100.example.com]
+        FS_RETAIL[Feature Stand: RETAIL-250<br/>feature-stand-retail-250.example.com]
+        FS_AML[Feature Stand: AML-75<br/>feature-stand-aml-75.example.com]
+        FS_REDESIGN[Feature Stand: REDESIGN-42<br/>feature-stand-redesign-42.example.com]
+    end
+    
+    subgraph "QA Testing"
+        QA_CORE[QA: Core Team]
+        QA_RETAIL[QA: Retail Team]
+        QA_AML[QA: AML Team]
+        QA_REDESIGN[QA: Redesign Team]
+    end
+    
+    subgraph "Code Review"
+        CR_CORE[Code Review: CORE-100]
+        CR_RETAIL[Code Review: RETAIL-250]
+        CR_AML[Code Review: AML-75]
+        CR_REDESIGN[Code Review: REDESIGN-42]
+    end
+    
+    subgraph "Environments"
+        ENV_DEV[DEV Environment<br/>Auto-deploy from dev]
+        ENV_QA[QA Environment<br/>Manual promotion]
+        ENV_STAGING[Staging Environment<br/>Release Manager approval]
+        ENV_PROD[Production Environment<br/>After staging validation]
+    end
+    
+    CORE -->|Deploy| FS_CORE
+    RETAIL -->|Deploy| FS_RETAIL
+    AML -->|Deploy| FS_AML
+    REDESIGN -->|Deploy| FS_REDESIGN
+    
+    FS_CORE --> QA_CORE
+    FS_RETAIL --> QA_RETAIL
+    FS_AML --> QA_AML
+    FS_REDESIGN --> QA_REDESIGN
+    
+    QA_CORE -->|Approved| CR_CORE
+    QA_RETAIL -->|Approved| CR_RETAIL
+    QA_AML -->|Approved| CR_AML
+    QA_REDESIGN -->|Approved| CR_REDESIGN
+    
+    CR_CORE -->|Merge| DEV
+    CR_RETAIL -->|Merge| DEV
+    CR_AML -->|Merge| DEV
+    CR_REDESIGN -->|Merge| DEV
+    
+    DEV -->|Auto-deploy| ENV_DEV
+    ENV_DEV -->|Manual promotion| ENV_QA
+    ENV_QA -->|Release Manager approval| ENV_STAGING
+    ENV_STAGING -->|After validation| ENV_PROD
+    ENV_PROD --> MAIN
+</div>
+<h4 id="text-based-workflow-summary">Text-Based Workflow Summary</h4>
+<pre><code>                    main (Production)
+                       ↑
+                       │ (After QA + Code Review)
+                       │
+                    dev (Integration)
+                 ↙  ↓  ↘  ↙  ↓  ↘
+        feature/   feature/   feature/   feature/
+        CORE-100   RETAIL-250  AML-75    REDESIGN-42
+           ↓           ↓          ↓           ↓
+    [Feature Stand] [Feature Stand] [Feature Stand] [Feature Stand]
+           ↓           ↓          ↓           ↓
+         QA          QA         QA          QA
+           ↓           ↓          ↓           ↓
+      Code Review  Code Review Code Review Code Review
+           ↓           ↓          ↓           ↓
+        Merge to dev (parallel, independent)
+</code></pre>
+<h3 id="summary">Summary</h3>
+<p>This git branching strategy enables:</p>
+<p>✅ <strong>Parallel Development</strong>: Four teams work independently on feature branches<br />
+✅ <strong>Isolated Testing</strong>: Feature stands provide complete environments for QA<br />
+✅ <strong>Dynamic Deployment</strong>: Infrastructure automatically selects correct branch per service<br />
+✅ <strong>No Blocking</strong>: Teams don't block each other's development or releases<br />
+✅ <strong>Quality Gates</strong>: Code review and QA happen before merge to <code>dev</code> or <code>main</code><br />
+✅ <strong>Traceability</strong>: Branch names link to Jira tickets (CORE-100, RETAIL-250, etc.)</p>
 <hr />
 <h2 id="release-pipeline-automation">Release Pipeline &amp; Automation</h2>
 <h3 id="cicd-pipeline-mandatory-checks">CI/CD Pipeline - Mandatory Checks</h3>
@@ -3540,5 +3973,65 @@ kafka-console-producer --topic retail.order.created --bootstrap-server kafka:909
 
   </main>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ 
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#38bdf8',
+      primaryTextColor: '#e5e7eb',
+      primaryBorderColor: '#1e293b',
+      lineColor: '#38bdf8',
+      secondaryColor: '#020617',
+      tertiaryColor: '#0f172a',
+      background: '#020617',
+      mainBkg: '#020617',
+      secondBkg: '#0f172a',
+      textColor: '#e5e7eb',
+      border1: '#1e293b',
+      border2: '#1e293b',
+      noteBkgColor: '#0f172a',
+      noteTextColor: '#e5e7eb',
+      noteBorderColor: '#38bdf8',
+      actorBorder: '#38bdf8',
+      actorBkg: '#020617',
+      actorTextColor: '#e5e7eb',
+      actorLineColor: '#1e293b',
+      signalColor: '#e5e7eb',
+      signalTextColor: '#e5e7eb',
+      labelBoxBkgColor: '#020617',
+      labelBoxBorderColor: '#38bdf8',
+      labelTextColor: '#e5e7eb',
+      loopTextColor: '#e5e7eb',
+      activationBorderColor: '#38bdf8',
+      activationBkgColor: '#0f172a',
+      sequenceNumberColor: '#e5e7eb',
+      sectionBkgColor: '#0f172a',
+      altSectionBkgColor: '#020617',
+      sectionBorderColor: '#38bdf8',
+      excludeBkgColor: '#020617',
+      taskBorderColor: '#38bdf8',
+      taskBkgColor: '#0f172a',
+      taskTextLightColor: '#e5e7eb',
+      taskTextColor: '#e5e7eb',
+      taskTextDarkColor: '#e5e7eb',
+      taskTextOutsideColor: '#e5e7eb',
+      taskTextClickableColor: '#38bdf8',
+      activeTaskBorderColor: '#38bdf8',
+      activeTaskBkgColor: '#0f172a',
+      gridColor: '#1e293b',
+      doneTaskBkgColor: '#020617',
+      doneTaskBorderColor: '#1e293b',
+      critBorderColor: '#f97373',
+      critBkgColor: '#020617',
+      taskTextCriticalColor: '#f97373',
+      todayLineColor: '#38bdf8',
+      labelColor: '#e5e7eb',
+      errorBkgColor: '#f97373',
+      errorTextColor: '#e5e7eb'
+    }
+  });
+</script>
 </body>
 </html>
