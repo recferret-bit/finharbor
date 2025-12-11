@@ -1758,19 +1758,19 @@ flowchart TD
     E --> F4[product-service<br/>Branch found?]
     E --> F5[Other services...]
     
-    F1 -->|Yes| G1[Deploy from<br/>feature/CORE-100-*]
-    F1 -->|No| H1[Deploy from<br/>dev branch]
+    F1 -->|Yes| G1["Deploy user-service<br/>from feature/CORE-100-*"]
+    F1 -->|No| H1["Deploy user-service<br/>from dev branch"]
     
-    F2 -->|Yes| G2[Deploy from<br/>feature/CORE-100-*]
-    F2 -->|No| H2[Deploy from<br/>dev branch]
+    F2 -->|Yes| G2["Deploy auth-service<br/>from feature/CORE-100-*"]
+    F2 -->|No| H2["Deploy auth-service<br/>from dev branch"]
     
-    F3 -->|Yes| G3[Deploy from<br/>feature/CORE-100-*]
-    F3 -->|No| H3[Deploy from<br/>dev branch]
+    F3 -->|Yes| G3["Deploy payment-service<br/>from feature/CORE-100-*"]
+    F3 -->|No| H3["Deploy payment-service<br/>from dev branch"]
     
-    F4 -->|Yes| G4[Deploy from<br/>feature/CORE-100-*]
-    F4 -->|No| H4[Deploy from<br/>dev branch]
+    F4 -->|Yes| G4["Deploy product-service<br/>from feature/CORE-100-*"]
+    F4 -->|No| H4["Deploy product-service<br/>from dev branch"]
     
-    F5 --> H5[Deploy from<br/>dev branch]
+    F5 --> H5["Deploy other services<br/>from dev branch"]
     
     G1 --> I[Create Kubernetes Namespace<br/>feature-stand-core-100]
     G2 --> I
@@ -1788,8 +1788,8 @@ flowchart TD
     L --> M[QA Testing on Feature Stand]
     M --> N{QA Approved?}
     N -->|Yes| O[Move to Code Review]
-    N -->|No| P[Developer fixes issues]
-    P --> B
+    N -->|No| P[Developer fixes issues<br/>and updates code]
+    P -->|Fix and redeploy| B
     O --> Q[PR Created/Updated]
     Q --> R[Code Review]
     R --> S[Merge to dev/main]
