@@ -1669,37 +1669,34 @@ Release Notes Generated (Jira → Confluence)
 <p>This section defines the git branching strategy and feature stand deployment process for managing parallel development across four cross-functional teams (Retail, Core, AML, Redesign). The strategy enables teams to work independently while maintaining code quality and enabling parallel QA and release processes.</p>
 <h3 id="branch-structure">Branch Structure</h3>
 <h4 id="visual-git-branch-hierarchy">Visual Git Branch Hierarchy</h4>
-<div class="mermaid">gitgraph
-    commit id: "Initial"
-    branch main
-    checkout main
-    commit id: "Production"
-    branch dev
-    checkout dev
-    commit id: "Integration"
-    branch feature-CORE-100
-    checkout feature-CORE-100
-    commit id: "Core Team Work"
-    checkout dev
-    branch feature-RETAIL-250
-    checkout feature-RETAIL-250
-    commit id: "Retail Team Work"
-    checkout dev
-    branch feature-AML-75
-    checkout feature-AML-75
-    commit id: "AML Team Work"
-    checkout dev
-    branch feature-REDESIGN-42
-    checkout feature-REDESIGN-42
-    commit id: "Redesign Team Work"
-    checkout dev
-    merge feature-CORE-100
-    commit id: "Integrated CORE-100"
-    merge feature-RETAIL-250
-    commit id: "Integrated RETAIL-250"
-    checkout main
-    merge dev
-    commit id: "Release to Production"
+<div class="mermaid">
+graph TD
+    Initial[Initial Commit] --> Main[main branch]
+    Main --> Production[Production]
+    Main --> Dev[dev branch]
+    Dev --> Integration[Integration]
+    Dev --> CORE[feature-CORE-100]
+    Dev --> RETAIL[feature-RETAIL-250]
+    Dev --> AML[feature-AML-75]
+    Dev --> REDESIGN[feature-REDESIGN-42]
+    CORE --> CoreWork[Core Team Work]
+    RETAIL --> RetailWork[Retail Team Work]
+    AML --> AMLWork[AML Team Work]
+    REDESIGN --> RedesignWork[Redesign Team Work]
+    CoreWork --> Dev
+    RetailWork --> Dev
+    AMLWork --> Dev
+    RedesignWork --> Dev
+    Dev --> Integrated1[Integrated CORE-100]
+    Dev --> Integrated2[Integrated RETAIL-250]
+    Dev --> Main
+    Main --> Release[Release to Production]
+    
+    style Initial fill:#4a90e2
+    style Main fill:#50c878
+    style Dev fill:#ffa500
+    style Production fill:#50c878
+    style Release fill:#50c878
 </div>
 <h4 id="core-branches">Core Branches</h4>
 <pre><code>main (or master)
@@ -3973,6 +3970,65 @@ kafka-console-producer --topic retail.order.created --bootstrap-server kafka:909
   </main>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ 
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#38bdf8',
+      primaryTextColor: '#e5e7eb',
+      primaryBorderColor: '#1e293b',
+      lineColor: '#38bdf8',
+      secondaryColor: '#020617',
+      tertiaryColor: '#0f172a',
+      background: '#020617',
+      mainBkg: '#020617',
+      secondBkg: '#0f172a',
+      textColor: '#e5e7eb',
+      border1: '#1e293b',
+      border2: '#1e293b',
+      noteBkgColor: '#0f172a',
+      noteTextColor: '#e5e7eb',
+      noteBorderColor: '#38bdf8',
+      actorBorder: '#38bdf8',
+      actorBkg: '#020617',
+      actorTextColor: '#e5e7eb',
+      actorLineColor: '#1e293b',
+      signalColor: '#e5e7eb',
+      signalTextColor: '#e5e7eb',
+      labelBoxBkgColor: '#020617',
+      labelBoxBorderColor: '#38bdf8',
+      labelTextColor: '#e5e7eb',
+      loopTextColor: '#e5e7eb',
+      activationBorderColor: '#38bdf8',
+      activationBkgColor: '#0f172a',
+      sequenceNumberColor: '#e5e7eb',
+      sectionBkgColor: '#0f172a',
+      altSectionBkgColor: '#020617',
+      sectionBorderColor: '#38bdf8',
+      excludeBkgColor: '#020617',
+      taskBorderColor: '#38bdf8',
+      taskBkgColor: '#0f172a',
+      taskTextLightColor: '#e5e7eb',
+      taskTextColor: '#e5e7eb',
+      taskTextDarkColor: '#e5e7eb',
+      taskTextOutsideColor: '#e5e7eb',
+      taskTextClickableColor: '#38bdf8',
+      activeTaskBorderColor: '#38bdf8',
+      activeTaskBkgColor: '#0f172a',
+      gridColor: '#1e293b',
+      doneTaskBkgColor: '#020617',
+      doneTaskBorderColor: '#1e293b',
+      critBorderColor: '#f97373',
+      critBkgColor: '#020617',
+      taskTextCriticalColor: '#f97373',
+      todayLineColor: '#38bdf8',
+      labelColor: '#e5e7eb',
+      errorBkgColor: '#f97373',
+      errorTextColor: '#e5e7eb'
+    }
+  });
+</script>
 <script>
   mermaid.initialize({ 
     startOnLoad: true,
