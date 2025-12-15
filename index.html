@@ -388,6 +388,7 @@
 <li><a href="#git-branching-strategy--feature-stand-deployment">Git Branching Strategy &amp; Feature Stand Deployment</a></li>
 <li><a href="#git-branching-strategy--feature-flags-deployment">Git Branching Strategy &amp; Feature Flags Deployment</a></li>
 <li><a href="#release-pipeline--automation">Release Pipeline &amp; Automation</a></li>
+<li><a href="#slack-release-notes--branch-tracking">Slack Release Notes &amp; Branch Tracking</a></li>
 <li><a href="#database-migrations-strategy">Database Migrations Strategy</a></li>
 <li><a href="#release-checklist--management">Release Checklist &amp; Management</a></li>
 <li><a href="#incident-management-process">Incident Management Process</a></li>
@@ -2905,6 +2906,339 @@ jobs:
 • Mobile app v3.0 approval expected 2026-01-22
 • Schedule v2 sunset reminder (2026-06-15)
 </code></pre>
+<hr />
+<h2 id="slack-release-notes--branch-tracking">Slack Release Notes & Branch Tracking</h2>
+<h3 id="overview">Overview</h3>
+<p>This section provides comprehensive documentation on tracking exact branches that go into specific releases and integrating Slack release notes notifications into your Kubernetes, Java Spring microservices, and CI/CD pipeline.</p>
+<p><strong>Release Git Flow:</strong></p>
+<pre><code>dev branch (all feature branches merged)
+    ↓
+release/2025.4.4-1-octo (new release branch created)
+    ↓
+CI/CD Deployment (Kubernetes)
+    ↓
+Slack Release Notes Notification
+</code></pre>
+<h3 id="release-branch-tracking-methodology">Release Branch Tracking Methodology</h3>
+<h4 id="1-understanding-your-release-branch-pattern">1. Understanding Your Release Branch Pattern</h4>
+<p>Your release branches follow the pattern: <code>release/{VERSION}-{DESCRIPTION}</code></p>
+<p><strong>Example:</strong> <code>release/2025.4.4-1-octo</code></p>
+<ul>
+<li><strong>Version:</strong> 2025.4.4-1</li>
+<li><strong>Description:</strong> octo (release identifier)</li>
+<li><strong>Base:</strong> Created from <code>dev</code> branch</li>
+</ul>
+<h4 id="2-tracking-branches-in-a-release">2. Tracking Branches in a Release</h4>
+<p><strong>Manual Git Commands to Track Branches:</strong></p>
+<pre><code class="language-bash"># 1. List all branches merged into a release branch
+git log release/2025.4.4-1-octo --merges --oneline --graph
+
+# 2. Get all feature branches that were merged into dev before release branch creation
+# First, find the commit where release branch was created
+git log release/2025.4.4-1-octo --oneline -1
+
+# 3. Compare dev branch at release creation point vs current release branch
+git log dev..release/2025.4.4-1-octo --oneline --merges
+
+# 4. Extract all merged branch names from commits
+git log release/2025.4.4-1-octo --merges --pretty=format:"%s" | \
+  grep -oP 'Merge branch \K[^'"'"']*' | \
+  sort -u
+
+# 5. Get detailed branch information with commit hashes
+git log release/2025.4.4-1-octo --merges --pretty=format:"%h|%s|%an|%ad" --date=short
+
+# 6. Track branches across multiple services (monorepo or multi-repo)
+# For each service repository:
+cd user-service && git log release/2025.4.4-1-octo --merges --oneline
+cd ../order-service && git log release/2025.4.4-1-octo --merges --oneline
+</code></pre>
+<p><strong>Automated Script for Branch Tracking:</strong></p>
+<pre><code class="language-bash">#!/bin/bash
+# track-release-branches.sh
+# Usage: ./track-release-branches.sh release/2025.4.4-1-octo
+
+RELEASE_BRANCH=$1
+BASE_BRANCH="dev"
+
+if [ -z "$RELEASE_BRANCH" ]; then
+  echo "Usage: $0 &lt;release-branch&gt;"
+  exit 1
+fi
+
+echo "📋 Tracking branches in release: $RELEASE_BRANCH"
+echo "================================================"
+
+# Get the point where release branch was created
+RELEASE_BASE=$(git merge-base $BASE_BRANCH $RELEASE_BRANCH)
+
+echo ""
+echo "🔍 Release Base Commit: $RELEASE_BASE"
+echo "📅 Release Branch Created: $(git log -1 --format=%ci $RELEASE_BASE)"
+echo ""
+
+# Get all merged branches
+echo "🌿 Merged Feature Branches:"
+echo "----------------------------"
+git log $RELEASE_BASE..$RELEASE_BRANCH --merges --pretty=format:"%h|%s|%an|%ad" --date=short | \
+  while IFS='|' read -r hash subject author date; do
+    # Extract branch name from merge commit message
+    branch=$(echo "$subject" | grep -oP "Merge branch ['\"]?\K[^'\"]*" || echo "unknown")
+    echo "  • $branch"
+    echo "    Commit: $hash | Author: $author | Date: $date"
+  done | sort -u
+
+echo ""
+echo "📊 Statistics:"
+echo "--------------"
+TOTAL_COMMITS=$(git rev-list --count $RELEASE_BASE..$RELEASE_BRANCH)
+MERGED_BRANCHES=$(git log $RELEASE_BASE..$RELEASE_BRANCH --merges --oneline | wc -l)
+echo "  Total commits: $TOTAL_COMMITS"
+echo "  Merged branches: $MERGED_BRANCHES"
+
+# Get list of services/modules affected
+echo ""
+echo "📦 Affected Services:"
+echo "---------------------"
+git log $RELEASE_BASE..$RELEASE_BRANCH --name-only --pretty=format:"" | \
+  grep -E "^[a-z-]+-service/" | \
+  cut -d'/' -f1 | \
+  sort -u | \
+  while read service; do
+    echo "  • $service"
+  done
+</code></pre>
+<h4 id="3-cicd-integration-for-branch-tracking">3. CI/CD Integration for Branch Tracking</h4>
+<p><strong>GitHub Actions Workflow for Release Branch Tracking:</strong></p>
+<pre><code class="language-yaml">name: Release Branch Tracking &amp; Slack Notification
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: 'Release branch name'
+        required: true
+        default: 'release/2025.4.4-1-octo'
+
+env:
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_RELEASES }}
+  BASE_BRANCH: dev
+
+jobs:
+  track-release-branches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch full history for branch tracking
+      
+      - name: Set release branch
+        id: set-branch
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "RELEASE_BRANCH=${{ github.event.inputs.release_branch }}" &gt;&gt; $GITHUB_OUTPUT
+          else
+            echo "RELEASE_BRANCH=${{ github.ref_name }}" &gt;&gt; $GITHUB_OUTPUT
+          fi
+      
+      - name: Track merged branches
+        id: track-branches
+        run: |
+          RELEASE_BRANCH="${{ steps.set-branch.outputs.RELEASE_BRANCH }}"
+          BASE_BRANCH="${{ env.BASE_BRANCH }}"
+          
+          # Get release base commit
+          RELEASE_BASE=$(git merge-base $BASE_BRANCH $RELEASE_BRANCH)
+          
+          # Extract merged branches
+          MERGED_BRANCHES=$(git log $RELEASE_BASE..$RELEASE_BRANCH --merges \
+            --pretty=format:"%h|%s|%an|%ad" --date=short | \
+            grep -oP "Merge branch ['\"]?\K[^'\"]*" | sort -u | tr '\n' ',' | sed 's/,$//')
+          
+          # Get commit count
+          COMMIT_COUNT=$(git rev-list --count $RELEASE_BASE..$RELEASE_BRANCH)
+          
+          # Get affected services
+          AFFECTED_SERVICES=$(git log $RELEASE_BASE..$RELEASE_BRANCH --name-only --pretty=format:"" | \
+            grep -E "^[a-z-]+-service/" | cut -d'/' -f1 | sort -u | tr '\n' ',' | sed 's/,$//')
+          
+          # Get release date
+          RELEASE_DATE=$(git log -1 --format=%ci $RELEASE_BASE | cut -d' ' -f1)
+          
+          echo "merged_branches=$MERGED_BRANCHES" &gt;&gt; $GITHUB_OUTPUT
+          echo "commit_count=$COMMIT_COUNT" &gt;&gt; $GITHUB_OUTPUT
+          echo "affected_services=$AFFECTED_SERVICES" &gt;&gt; $GITHUB_OUTPUT
+          echo "release_date=$RELEASE_DATE" &gt;&gt; $GITHUB_OUTPUT
+          echo "release_base=$RELEASE_BASE" &gt;&gt; $GITHUB_OUTPUT
+      
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          RELEASE_BRANCH="${{ steps.set-branch.outputs.RELEASE_BRANCH }}"
+          RELEASE_BASE="${{ steps.track-branches.outputs.release_base }}"
+          
+          # Generate detailed release notes
+          NOTES=$(git log $RELEASE_BASE..$RELEASE_BRANCH --pretty=format:"- %s (%h) - %an" --date=short)
+          
+          echo "notes&lt;&lt;EOF" &gt;&gt; $GITHUB_OUTPUT
+          echo "$NOTES" &gt;&gt; $GITHUB_OUTPUT
+          echo "EOF" &gt;&gt; $GITHUB_OUTPUT
+      
+      - name: Send Slack Release Notification
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🚀 New Release Branch Created: ${{ steps.set-branch.outputs.RELEASE_BRANCH }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚀 Release Branch: ${{ steps.set-branch.outputs.RELEASE_BRANCH }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Release Date:*\n${{ steps.track-branches.outputs.release_date }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Total Commits:*\n${{ steps.track-branches.outputs.commit_count }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Base Branch:*\n${{ env.BASE_BRANCH }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Base Commit:*\n\`${{ steps.track-branches.outputs.release_base }}\`"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*🌿 Merged Feature Branches:*\n${{ steps.track-branches.outputs.merged_branches }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*📦 Affected Services:*\n${{ steps.track-branches.outputs.affected_services }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*📋 Recent Commits:*\n\`\`\`${{ steps.release-notes.outputs.notes }}\`\`\`"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View in GitHub"
+                      },
+                      "url": "https://github.com/${{ github.repository }}/tree/${{ steps.set-branch.outputs.RELEASE_BRANCH }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_RELEASES }}
+</code></pre>
+<h3 id="java-spring-microservice-integration">Java Spring Microservice Integration</h3>
+<p>For complete Java Spring Boot implementation code, REST controllers, and configuration examples, please refer to the <code>index.md</code> file which contains the full source code for:</p>
+<ul>
+<li>ReleaseTrackingService (Spring Boot service)</li>
+<li>ReleaseTrackingController (REST API endpoints)</li>
+<li>Application properties configuration</li>
+<li>Kubernetes Job and CronJob configurations</li>
+</li>
+</ul>
+<h3 id="complete-slack-release-notes-template">Complete Slack Release Notes Template</h3>
+<p><strong>Example Slack Notification Format:</strong></p>
+<pre><code class="language-markdown">🚀 **Release Branch Created: release/2025.4.4-1-octo**
+
+**Release Information:**
+• **Release Branch:** release/2025.4.4-1-octo
+• **Base Branch:** dev
+• **Release Date:** 2025-04-04
+• **Total Commits:** 47
+• **Base Commit:** a1b2c3d4e5f6
+
+**🌿 Merged Feature Branches:**
+  • feature/CORE-100-implement-oauth2
+  • feature/RETAIL-250-add-product-search
+  • feature/AML-75-enhance-kyc-checks
+  • feature/REDESIGN-42-update-checkout-ui
+
+**📦 Affected Services:**
+  • user-service
+  • order-service
+  • payment-service
+  • notification-service
+
+**📋 Key Changes:**
+  • OAuth2 authentication implementation (CORE-100)
+  • Enhanced product search with filters (RETAIL-250)
+  • Improved KYC validation rules (AML-75)
+  • Modernized checkout UI components (REDESIGN-42)
+
+**🔗 Links:**
+  • GitHub: https://github.com/org/repo/tree/release/2025.4.4-1-octo
+  • CI/CD Pipeline: https://ci.example.com/pipelines/release-2025.4.4-1-octo
+  • Release Notes: https://docs.example.com/releases/2025.4.4-1
+
+**Next Steps:**
+  • CI/CD deployment initiated
+  • QA testing scheduled
+  • Production deployment: 2025-04-10
+</code></pre>
+<h3 id="integration-checklist">Integration Checklist</h3>
+<ul>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" /> Set up Slack webhook URL in CI/CD secrets</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" /> Configure Git repository path in application properties</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" /> Deploy release tracking service (Spring Boot) to Kubernetes</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" /> Create Kubernetes Job/CronJob for automated tracking</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" /> Test branch tracking script with sample release branch</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" /> Verify Slack notifications are received correctly</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" /> Document release branch naming convention</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" /> Set up automated tracking on release branch creation</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" /> Configure notifications for all relevant Slack channels</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" /> Test end-to-end flow: dev → release branch → Slack notification</li>
+</ul>
+<h3 id="best-practices">Best Practices</h3>
+<ol>
+<li><strong>Automate Everything:</strong> Use CI/CD pipelines to automatically track branches when release branches are created</li>
+<li><strong>Consistent Naming:</strong> Enforce release branch naming convention (e.g., <code>release/{VERSION}-{DESCRIPTION}</code>)</li>
+<li><strong>Multi-Repository Support:</strong> If using multiple repositories, track branches across all services</li>
+<li><strong>Historical Tracking:</strong> Store release tracking data in a database for historical analysis</li>
+<li><strong>Notification Channels:</strong> Send notifications to appropriate Slack channels:
+<ul>
+<li><code>#releases</code> - All release notifications</li>
+<li><code>#deployments</code> - Deployment-specific updates</li>
+<li><code>#team-{name}</code> - Team-specific releases</li>
+</ul>
+</li>
+<li><strong>Error Handling:</strong> Implement retry logic for Slack notifications and Git operations</li>
+<li><strong>Security:</strong> Store Slack webhooks and Git credentials in Kubernetes secrets</li>
+</ol>
 <hr />
 <h2 id="database-migrations-strategy">Database Migrations Strategy</h2>
 <h3 id="expand-contract-pattern-with-separate-pipeline">Expand-Contract Pattern with Separate Pipeline</h3>

@@ -26,13 +26,14 @@ Perfect! Now I have comprehensive information about Kafka Streams patterns, team
 7. [Git Branching Strategy & Feature Stand Deployment](#git-branching-strategy--feature-stand-deployment)
 8. [Git Branching Strategy & Feature Flags Deployment](#git-branching-strategy--feature-flags-deployment)
 9. [Release Pipeline & Automation](#release-pipeline--automation)
-9. [Database Migrations Strategy](#database-migrations-strategy)
-10. [Release Checklist & Management](#release-checklist--management)
-11. [Incident Management Process](#incident-management-process)
-12. [Post-Incident Review (Postmortem)](#post-incident-review-postmortem)
-13. [Tools & Integration Recommendations](#tools--integration-recommendations)
-14. [Secure Git Data Practices](#secure-git-data-practices)
-15. [Knowledge Documentation Standards](#knowledge-documentation-standards)
+10. [Slack Release Notes & Branch Tracking](#slack-release-notes--branch-tracking)
+11. [Database Migrations Strategy](#database-migrations-strategy)
+12. [Release Checklist & Management](#release-checklist--management)
+13. [Incident Management Process](#incident-management-process)
+14. [Post-Incident Review (Postmortem)](#post-incident-review-postmortem)
+15. [Tools & Integration Recommendations](#tools--integration-recommendations)
+16. [Secure Git Data Practices](#secure-git-data-practices)
+17. [Knowledge Documentation Standards](#knowledge-documentation-standards)
 
 ***
 
@@ -2486,6 +2487,774 @@ kubectl rollout undo deployment/user-service -n production
 • Mobile app v3.0 approval expected 2026-01-22
 • Schedule v2 sunset reminder (2026-06-15)
 ```
+
+***
+
+## Slack Release Notes & Branch Tracking
+
+### Overview
+
+This section provides comprehensive documentation on tracking exact branches that go into specific releases and integrating Slack release notes notifications into your Kubernetes, Java Spring microservices, and CI/CD pipeline.
+
+**Release Git Flow:**
+```
+dev branch (all feature branches merged)
+    ↓
+release/2025.4.4-1-octo (new release branch created)
+    ↓
+CI/CD Deployment (Kubernetes)
+    ↓
+Slack Release Notes Notification
+```
+
+### Release Branch Tracking Methodology
+
+#### 1. Understanding Your Release Branch Pattern
+
+Your release branches follow the pattern: `release/{VERSION}-{DESCRIPTION}`
+
+**Example:** `release/2025.4.4-1-octo`
+- **Version:** 2025.4.4-1
+- **Description:** octo (release identifier)
+- **Base:** Created from `dev` branch
+
+#### 2. Tracking Branches in a Release
+
+**Manual Git Commands to Track Branches:**
+
+```bash
+# 1. List all branches merged into a release branch
+git log release/2025.4.4-1-octo --merges --oneline --graph
+
+# 2. Get all feature branches that were merged into dev before release branch creation
+# First, find the commit where release branch was created
+git log release/2025.4.4-1-octo --oneline -1
+
+# 3. Compare dev branch at release creation point vs current release branch
+git log dev..release/2025.4.4-1-octo --oneline --merges
+
+# 4. Extract all merged branch names from commits
+git log release/2025.4.4-1-octo --merges --pretty=format:"%s" | \
+  grep -oP 'Merge branch \K[^'"'"']*' | \
+  sort -u
+
+# 5. Get detailed branch information with commit hashes
+git log release/2025.4.4-1-octo --merges --pretty=format:"%h|%s|%an|%ad" --date=short
+
+# 6. Track branches across multiple services (monorepo or multi-repo)
+# For each service repository:
+cd user-service && git log release/2025.4.4-1-octo --merges --oneline
+cd ../order-service && git log release/2025.4.4-1-octo --merges --oneline
+```
+
+**Automated Script for Branch Tracking:**
+
+```bash
+#!/bin/bash
+# track-release-branches.sh
+# Usage: ./track-release-branches.sh release/2025.4.4-1-octo
+
+RELEASE_BRANCH=$1
+BASE_BRANCH="dev"
+
+if [ -z "$RELEASE_BRANCH" ]; then
+  echo "Usage: $0 <release-branch>"
+  exit 1
+fi
+
+echo "📋 Tracking branches in release: $RELEASE_BRANCH"
+echo "================================================"
+
+# Get the point where release branch was created
+RELEASE_BASE=$(git merge-base $BASE_BRANCH $RELEASE_BRANCH)
+
+echo ""
+echo "🔍 Release Base Commit: $RELEASE_BASE"
+echo "📅 Release Branch Created: $(git log -1 --format=%ci $RELEASE_BASE)"
+echo ""
+
+# Get all merged branches
+echo "🌿 Merged Feature Branches:"
+echo "----------------------------"
+git log $RELEASE_BASE..$RELEASE_BRANCH --merges --pretty=format:"%h|%s|%an|%ad" --date=short | \
+  while IFS='|' read -r hash subject author date; do
+    # Extract branch name from merge commit message
+    branch=$(echo "$subject" | grep -oP "Merge branch ['\"]?\K[^'\"]*" || echo "unknown")
+    echo "  • $branch"
+    echo "    Commit: $hash | Author: $author | Date: $date"
+  done | sort -u
+
+echo ""
+echo "📊 Statistics:"
+echo "--------------"
+TOTAL_COMMITS=$(git rev-list --count $RELEASE_BASE..$RELEASE_BRANCH)
+MERGED_BRANCHES=$(git log $RELEASE_BASE..$RELEASE_BRANCH --merges --oneline | wc -l)
+echo "  Total commits: $TOTAL_COMMITS"
+echo "  Merged branches: $MERGED_BRANCHES"
+
+# Get list of services/modules affected
+echo ""
+echo "📦 Affected Services:"
+echo "---------------------"
+git log $RELEASE_BASE..$RELEASE_BRANCH --name-only --pretty=format:"" | \
+  grep -E "^[a-z-]+-service/" | \
+  cut -d'/' -f1 | \
+  sort -u | \
+  while read service; do
+    echo "  • $service"
+  done
+```
+
+#### 3. CI/CD Integration for Branch Tracking
+
+**GitHub Actions Workflow for Release Branch Tracking:**
+
+```yaml
+name: Release Branch Tracking & Slack Notification
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: 'Release branch name'
+        required: true
+        default: 'release/2025.4.4-1-octo'
+
+env:
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_RELEASES }}
+  BASE_BRANCH: dev
+
+jobs:
+  track-release-branches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch full history for branch tracking
+      
+      - name: Set release branch
+        id: set-branch
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "RELEASE_BRANCH=${{ github.event.inputs.release_branch }}" >> $GITHUB_OUTPUT
+          else
+            echo "RELEASE_BRANCH=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Track merged branches
+        id: track-branches
+        run: |
+          RELEASE_BRANCH="${{ steps.set-branch.outputs.RELEASE_BRANCH }}"
+          BASE_BRANCH="${{ env.BASE_BRANCH }}"
+          
+          # Get release base commit
+          RELEASE_BASE=$(git merge-base $BASE_BRANCH $RELEASE_BRANCH)
+          
+          # Extract merged branches
+          MERGED_BRANCHES=$(git log $RELEASE_BASE..$RELEASE_BRANCH --merges \
+            --pretty=format:"%h|%s|%an|%ad" --date=short | \
+            grep -oP "Merge branch ['\"]?\K[^'\"]*" | sort -u | tr '\n' ',' | sed 's/,$//')
+          
+          # Get commit count
+          COMMIT_COUNT=$(git rev-list --count $RELEASE_BASE..$RELEASE_BRANCH)
+          
+          # Get affected services
+          AFFECTED_SERVICES=$(git log $RELEASE_BASE..$RELEASE_BRANCH --name-only --pretty=format:"" | \
+            grep -E "^[a-z-]+-service/" | cut -d'/' -f1 | sort -u | tr '\n' ',' | sed 's/,$//')
+          
+          # Get release date
+          RELEASE_DATE=$(git log -1 --format=%ci $RELEASE_BASE | cut -d' ' -f1)
+          
+          echo "merged_branches=$MERGED_BRANCHES" >> $GITHUB_OUTPUT
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+          echo "affected_services=$AFFECTED_SERVICES" >> $GITHUB_OUTPUT
+          echo "release_date=$RELEASE_DATE" >> $GITHUB_OUTPUT
+          echo "release_base=$RELEASE_BASE" >> $GITHUB_OUTPUT
+      
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          RELEASE_BRANCH="${{ steps.set-branch.outputs.RELEASE_BRANCH }}"
+          RELEASE_BASE="${{ steps.track-branches.outputs.release_base }}"
+          
+          # Generate detailed release notes
+          NOTES=$(git log $RELEASE_BASE..$RELEASE_BRANCH --pretty=format:"- %s (%h) - %an" --date=short)
+          
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Send Slack Release Notification
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🚀 New Release Branch Created: ${{ steps.set-branch.outputs.RELEASE_BRANCH }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚀 Release Branch: ${{ steps.set-branch.outputs.RELEASE_BRANCH }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Release Date:*\n${{ steps.track-branches.outputs.release_date }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Total Commits:*\n${{ steps.track-branches.outputs.commit_count }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Base Branch:*\n${{ env.BASE_BRANCH }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Base Commit:*\n\`${{ steps.track-branches.outputs.release_base }}\`"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*🌿 Merged Feature Branches:*\n${{ steps.track-branches.outputs.merged_branches }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*📦 Affected Services:*\n${{ steps.track-branches.outputs.affected_services }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*📋 Recent Commits:*\n\`\`\`${{ steps.release-notes.outputs.notes }}\`\`\`"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View in GitHub"
+                      },
+                      "url": "https://github.com/${{ github.repository }}/tree/${{ steps.set-branch.outputs.RELEASE_BRANCH }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_RELEASES }}
+```
+
+### Java Spring Microservice Integration
+
+#### 1. Release Tracking Service (Spring Boot)
+
+Create a Spring Boot service to track releases and send Slack notifications:
+
+```java
+package com.example.release.tracking;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+public class ReleaseTrackingService {
+
+    @Value("${slack.webhook.releases}")
+    private String slackWebhookUrl;
+
+    @Value("${git.repo.path}")
+    private String gitRepoPath;
+
+    private final RestTemplate restTemplate;
+
+    public ReleaseTrackingService(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
+
+    /**
+     * Track branches in a release and generate report
+     */
+    public ReleaseReport trackReleaseBranches(String releaseBranch, String baseBranch) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                "git", "log", 
+                baseBranch + ".." + releaseBranch,
+                "--merges",
+                "--pretty=format:%h|%s|%an|%ad",
+                "--date=short"
+            );
+            pb.directory(new java.io.File(gitRepoPath));
+            Process process = pb.start();
+
+            List<String> mergedBranches = new ArrayList<>();
+            List<CommitInfo> commits = new ArrayList<>();
+
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] parts = line.split("\\|");
+                    if (parts.length >= 4) {
+                        String hash = parts[0];
+                        String subject = parts[1];
+                        String author = parts[2];
+                        String date = parts[3];
+                        
+                        // Extract branch name from merge commit
+                        String branch = extractBranchName(subject);
+                        if (branch != null && !mergedBranches.contains(branch)) {
+                            mergedBranches.add(branch);
+                        }
+                        
+                        commits.add(new CommitInfo(hash, subject, author, date));
+                    }
+                }
+            }
+
+            // Get commit count
+            ProcessBuilder countPb = new ProcessBuilder(
+                "git", "rev-list", "--count",
+                baseBranch + ".." + releaseBranch
+            );
+            countPb.directory(new java.io.File(gitRepoPath));
+            Process countProcess = countPb.start();
+            
+            int commitCount = Integer.parseInt(
+                new BufferedReader(new InputStreamReader(countProcess.getInputStream()))
+                    .readLine()
+            );
+
+            // Get affected services
+            Set<String> affectedServices = getAffectedServices(releaseBranch, baseBranch);
+
+            return new ReleaseReport(
+                releaseBranch,
+                baseBranch,
+                mergedBranches,
+                commits,
+                commitCount,
+                affectedServices,
+                LocalDateTime.now()
+            );
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to track release branches", e);
+        }
+    }
+
+    /**
+     * Send release notification to Slack
+     */
+    public void sendSlackNotification(ReleaseReport report) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("text", "🚀 Release Branch: " + report.getReleaseBranch());
+
+        List<Map<String, Object>> blocks = new ArrayList<>();
+
+        // Header
+        Map<String, Object> header = new HashMap<>();
+        header.put("type", "header");
+        Map<String, Object> headerText = new HashMap<>();
+        headerText.put("type", "plain_text");
+        headerText.put("text", "🚀 Release: " + report.getReleaseBranch());
+        header.put("text", headerText);
+        blocks.add(header);
+
+        // Release info section
+        Map<String, Object> infoSection = new HashMap<>();
+        infoSection.put("type", "section");
+        List<Map<String, Object>> fields = new ArrayList<>();
+        
+        addField(fields, "*Release Branch:*", report.getReleaseBranch());
+        addField(fields, "*Base Branch:*", report.getBaseBranch());
+        addField(fields, "*Total Commits:*", String.valueOf(report.getCommitCount()));
+        addField(fields, "*Tracked At:*", 
+            report.getTrackedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        
+        infoSection.put("fields", fields);
+        blocks.add(infoSection);
+
+        // Merged branches section
+        if (!report.getMergedBranches().isEmpty()) {
+            Map<String, Object> branchesSection = new HashMap<>();
+            branchesSection.put("type", "section");
+            Map<String, Object> branchesText = new HashMap<>();
+            branchesText.put("type", "mrkdwn");
+            branchesText.put("text", "*🌿 Merged Feature Branches:*\n" + 
+                String.join("\n", report.getMergedBranches().stream()
+                    .map(b -> "  • " + b)
+                    .collect(Collectors.toList())));
+            branchesSection.put("text", branchesText);
+            blocks.add(branchesSection);
+        }
+
+        // Affected services section
+        if (!report.getAffectedServices().isEmpty()) {
+            Map<String, Object> servicesSection = new HashMap<>();
+            servicesSection.put("type", "section");
+            Map<String, Object> servicesText = new HashMap<>();
+            servicesText.put("type", "mrkdwn");
+            servicesText.put("text", "*📦 Affected Services:*\n" + 
+                String.join(", ", report.getAffectedServices()));
+            servicesSection.put("text", servicesText);
+            blocks.add(servicesSection);
+        }
+
+        payload.put("blocks", blocks);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
+
+        restTemplate.postForObject(slackWebhookUrl, entity, String.class);
+    }
+
+    private String extractBranchName(String commitSubject) {
+        // Pattern: "Merge branch 'feature/CORE-100-oauth2'"
+        java.util.regex.Pattern pattern = 
+            java.util.regex.Pattern.compile("Merge branch ['\"]?([^'\"]+)['\"]?");
+        java.util.regex.Matcher matcher = pattern.matcher(commitSubject);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
+    private Set<String> getAffectedServices(String releaseBranch, String baseBranch) 
+            throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(
+            "git", "log", 
+            baseBranch + ".." + releaseBranch,
+            "--name-only",
+            "--pretty=format:"
+        );
+        pb.directory(new java.io.File(gitRepoPath));
+        Process process = pb.start();
+
+        Set<String> services = new HashSet<>();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.matches("^[a-z-]+-service/.*")) {
+                    String service = line.split("/")[0];
+                    services.add(service);
+                }
+            }
+        }
+        return services;
+    }
+
+    private void addField(List<Map<String, Object>> fields, String title, String value) {
+        Map<String, Object> field = new HashMap<>();
+        field.put("type", "mrkdwn");
+        field.put("text", title + "\n" + value);
+        fields.add(field);
+    }
+
+    // Data classes
+    public static class ReleaseReport {
+        private final String releaseBranch;
+        private final String baseBranch;
+        private final List<String> mergedBranches;
+        private final List<CommitInfo> commits;
+        private final int commitCount;
+        private final Set<String> affectedServices;
+        private final LocalDateTime trackedAt;
+
+        public ReleaseReport(String releaseBranch, String baseBranch, 
+                           List<String> mergedBranches, List<CommitInfo> commits,
+                           int commitCount, Set<String> affectedServices,
+                           LocalDateTime trackedAt) {
+            this.releaseBranch = releaseBranch;
+            this.baseBranch = baseBranch;
+            this.mergedBranches = mergedBranches;
+            this.commits = commits;
+            this.commitCount = commitCount;
+            this.affectedServices = affectedServices;
+            this.trackedAt = trackedAt;
+        }
+
+        // Getters
+        public String getReleaseBranch() { return releaseBranch; }
+        public String getBaseBranch() { return baseBranch; }
+        public List<String> getMergedBranches() { return mergedBranches; }
+        public List<CommitInfo> getCommits() { return commits; }
+        public int getCommitCount() { return commitCount; }
+        public Set<String> getAffectedServices() { return affectedServices; }
+        public LocalDateTime getTrackedAt() { return trackedAt; }
+    }
+
+    public static class CommitInfo {
+        private final String hash;
+        private final String subject;
+        private final String author;
+        private final String date;
+
+        public CommitInfo(String hash, String subject, String author, String date) {
+            this.hash = hash;
+            this.subject = subject;
+            this.author = author;
+            this.date = date;
+        }
+
+        // Getters
+        public String getHash() { return hash; }
+        public String getSubject() { return subject; }
+        public String getAuthor() { return author; }
+        public String getDate() { return date; }
+    }
+}
+```
+
+#### 2. REST Controller for Release Tracking
+
+```java
+package com.example.release.tracking;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/releases")
+public class ReleaseTrackingController {
+
+    private final ReleaseTrackingService releaseTrackingService;
+
+    public ReleaseTrackingController(ReleaseTrackingService releaseTrackingService) {
+        this.releaseTrackingService = releaseTrackingService;
+    }
+
+    @PostMapping("/track")
+    public ResponseEntity<ReleaseTrackingService.ReleaseReport> trackRelease(
+            @RequestParam String releaseBranch,
+            @RequestParam(defaultValue = "dev") String baseBranch) {
+        
+        ReleaseTrackingService.ReleaseReport report = 
+            releaseTrackingService.trackReleaseBranches(releaseBranch, baseBranch);
+        
+        // Send Slack notification
+        releaseTrackingService.sendSlackNotification(report);
+        
+        return ResponseEntity.ok(report);
+    }
+
+    @GetMapping("/track")
+    public ResponseEntity<ReleaseTrackingService.ReleaseReport> getReleaseInfo(
+            @RequestParam String releaseBranch,
+            @RequestParam(defaultValue = "dev") String baseBranch) {
+        
+        ReleaseTrackingService.ReleaseReport report = 
+            releaseTrackingService.trackReleaseBranches(releaseBranch, baseBranch);
+        
+        return ResponseEntity.ok(report);
+    }
+}
+```
+
+#### 3. Application Properties Configuration
+
+```properties
+# application.properties
+slack.webhook.releases=${SLACK_WEBHOOK_RELEASES:https://hooks.slack.com/services/YOUR/WEBHOOK/URL}
+git.repo.path=${GIT_REPO_PATH:/workspace}
+
+# Optional: Git credentials for private repos
+git.username=${GIT_USERNAME:}
+git.password=${GIT_PASSWORD:}
+```
+
+### Kubernetes Integration
+
+#### 1. Kubernetes Job for Release Tracking
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: release-tracker-2025.4.4-1-octo
+  namespace: devops
+spec:
+  template:
+    spec:
+      containers:
+      - name: release-tracker
+        image: release-tracker:latest
+        env:
+        - name: RELEASE_BRANCH
+          value: "release/2025.4.4-1-octo"
+        - name: BASE_BRANCH
+          value: "dev"
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: slack-webhooks
+              key: releases
+        - name: GIT_REPO_PATH
+          value: "/workspace"
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            git fetch origin
+            git checkout $RELEASE_BRANCH
+            ./track-release-branches.sh $RELEASE_BRANCH
+            curl -X POST $SLACK_WEBHOOK_URL \
+              -H 'Content-Type: application/json' \
+              -d @release-report.json
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: git-repo-pvc
+      restartPolicy: Never
+  backoffLimit: 3
+```
+
+#### 2. Kubernetes CronJob for Automated Release Tracking
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: release-tracker-cron
+  namespace: devops
+spec:
+  schedule: "0 9 * * *"  # Run daily at 9 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: release-tracker
+            image: release-tracker:latest
+            env:
+            - name: BASE_BRANCH
+              value: "dev"
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: slack-webhooks
+                  key: releases
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                # Find all release branches created in last 24 hours
+                git fetch origin
+                RELEASE_BRANCHES=$(git branch -r | grep "release/" | \
+                  xargs -I {} git log -1 --format="%ci|%D" {} | \
+                  awk -v cutoff="$(date -d '24 hours ago' -Iseconds)" \
+                  '$1 >= cutoff {print $NF}' | \
+                  sed 's/origin\///')
+                
+                for branch in $RELEASE_BRANCHES; do
+                  ./track-release-branches.sh $branch
+                  curl -X POST $SLACK_WEBHOOK_URL \
+                    -H 'Content-Type: application/json' \
+                    -d @release-report.json
+                done
+          restartPolicy: OnFailure
+```
+
+### Complete Slack Release Notes Template
+
+**Example Slack Notification Format:**
+
+```markdown
+🚀 **Release Branch Created: release/2025.4.4-1-octo**
+
+**Release Information:**
+• **Release Branch:** release/2025.4.4-1-octo
+• **Base Branch:** dev
+• **Release Date:** 2025-04-04
+• **Total Commits:** 47
+• **Base Commit:** a1b2c3d4e5f6
+
+**🌿 Merged Feature Branches:**
+  • feature/CORE-100-implement-oauth2
+  • feature/RETAIL-250-add-product-search
+  • feature/AML-75-enhance-kyc-checks
+  • feature/REDESIGN-42-update-checkout-ui
+
+**📦 Affected Services:**
+  • user-service
+  • order-service
+  • payment-service
+  • notification-service
+
+**📋 Key Changes:**
+  • OAuth2 authentication implementation (CORE-100)
+  • Enhanced product search with filters (RETAIL-250)
+  • Improved KYC validation rules (AML-75)
+  • Modernized checkout UI components (REDESIGN-42)
+
+**🔗 Links:**
+  • GitHub: https://github.com/org/repo/tree/release/2025.4.4-1-octo
+  • CI/CD Pipeline: https://ci.example.com/pipelines/release-2025.4.4-1-octo
+  • Release Notes: https://docs.example.com/releases/2025.4.4-1
+
+**Next Steps:**
+  • CI/CD deployment initiated
+  • QA testing scheduled
+  • Production deployment: 2025-04-10
+```
+
+### Integration Checklist
+
+- [ ] Set up Slack webhook URL in CI/CD secrets
+- [ ] Configure Git repository path in application properties
+- [ ] Deploy release tracking service (Spring Boot) to Kubernetes
+- [ ] Create Kubernetes Job/CronJob for automated tracking
+- [ ] Test branch tracking script with sample release branch
+- [ ] Verify Slack notifications are received correctly
+- [ ] Document release branch naming convention
+- [ ] Set up automated tracking on release branch creation
+- [ ] Configure notifications for all relevant Slack channels
+- [ ] Test end-to-end flow: dev → release branch → Slack notification
+
+### Best Practices
+
+1. **Automate Everything:** Use CI/CD pipelines to automatically track branches when release branches are created
+2. **Consistent Naming:** Enforce release branch naming convention (e.g., `release/{VERSION}-{DESCRIPTION}`)
+3. **Multi-Repository Support:** If using multiple repositories, track branches across all services
+4. **Historical Tracking:** Store release tracking data in a database for historical analysis
+5. **Notification Channels:** Send notifications to appropriate Slack channels:
+   - `#releases` - All release notifications
+   - `#deployments` - Deployment-specific updates
+   - `#team-{name}` - Team-specific releases
+6. **Error Handling:** Implement retry logic for Slack notifications and Git operations
+7. **Security:** Store Slack webhooks and Git credentials in Kubernetes secrets
 
 ***
 
