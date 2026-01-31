@@ -1,0 +1,419 @@
+openapi: 3.0.3
+info:
+  title: Casino Balance Service API
+  description: |
+    Balance management service for casino backend.
+    Provides operations for managing user balances, deposits, withdrawals, and balance queries.
+  version: 1.0.0
+  contact:
+    name: Casino Backend Team
+    email: backend@casino.com
+
+servers:
+  - url: http://localhost:8080/api/v1/balance
+    description: Local development server
+  - url: https://api.casino.com/api/v1/balance
+    description: Production server
+
+tags:
+  - name: Balance
+    description: Balance management operations
+  - name: Transactions
+    description: Transaction history operations
+
+paths:
+  /balance/{userId}:
+    get:
+      tags:
+        - Balance
+      summary: Get user balance
+      description: Retrieves the current balance for a specific user
+      operationId: getBalance
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Unique identifier of the user
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Balance retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /balance/{userId}/deposit:
+    post:
+      tags:
+        - Balance
+      summary: Deposit funds
+      description: Adds funds to a user's balance
+      operationId: depositFunds
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Unique identifier of the user
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositRequest'
+      responses:
+        '200':
+          description: Deposit successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /balance/{userId}/withdraw:
+    post:
+      tags:
+        - Balance
+      summary: Withdraw funds
+      description: Deducts funds from a user's balance
+      operationId: withdrawFunds
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Unique identifier of the user
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawRequest'
+      responses:
+        '200':
+          description: Withdrawal successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Invalid request or insufficient funds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /balance/{userId}/transactions:
+    get:
+      tags:
+        - Transactions
+      summary: Get transaction history
+      description: Retrieves transaction history for a user
+      operationId: getTransactionHistory
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Unique identifier of the user
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          description: Page number (0-indexed)
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: size
+          in: query
+          description: Page size
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: transactionType
+          in: query
+          description: Filter by transaction type
+          schema:
+            $ref: '#/components/schemas/TransactionType'
+      responses:
+        '200':
+          description: Transaction history retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionHistoryResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Service health check endpoint
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+
+components:
+  schemas:
+    BalanceResponse:
+      type: object
+      required:
+        - userId
+        - balance
+        - currency
+        - lastUpdated
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: User identifier
+        balance:
+          type: number
+          format: decimal
+          description: Current balance amount
+          example: 1000.50
+        currency:
+          type: string
+          description: Currency code (ISO 4217)
+          example: USD
+        lastUpdated:
+          type: string
+          format: date-time
+          description: Last balance update timestamp
+
+    DepositRequest:
+      type: object
+      required:
+        - amount
+        - currency
+        - transactionId
+      properties:
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Deposit amount
+          example: 100.00
+        currency:
+          type: string
+          description: Currency code (ISO 4217)
+          example: USD
+        transactionId:
+          type: string
+          description: External transaction identifier
+          example: txn_123456789
+        description:
+          type: string
+          description: Optional transaction description
+          example: Deposit via credit card
+
+    WithdrawRequest:
+      type: object
+      required:
+        - amount
+        - currency
+        - transactionId
+      properties:
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Withdrawal amount
+          example: 50.00
+        currency:
+          type: string
+          description: Currency code (ISO 4217)
+          example: USD
+        transactionId:
+          type: string
+          description: External transaction identifier
+          example: txn_987654321
+        description:
+          type: string
+          description: Optional transaction description
+          example: Withdrawal to bank account
+
+    TransactionResponse:
+      type: object
+      required:
+        - transactionId
+        - userId
+        - amount
+        - currency
+        - transactionType
+        - status
+        - timestamp
+        - newBalance
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+          description: Internal transaction identifier
+        userId:
+          type: string
+          format: uuid
+          description: User identifier
+        amount:
+          type: number
+          format: decimal
+          description: Transaction amount
+        currency:
+          type: string
+          description: Currency code
+        transactionType:
+          $ref: '#/components/schemas/TransactionType'
+        status:
+          $ref: '#/components/schemas/TransactionStatus'
+        description:
+          type: string
+          description: Transaction description
+        timestamp:
+          type: string
+          format: date-time
+          description: Transaction timestamp
+        newBalance:
+          type: number
+          format: decimal
+          description: Balance after transaction
+
+    TransactionHistoryResponse:
+      type: object
+      required:
+        - transactions
+        - totalElements
+        - totalPages
+        - currentPage
+        - pageSize
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionResponse'
+        totalElements:
+          type: integer
+          description: Total number of transactions
+        totalPages:
+          type: integer
+          description: Total number of pages
+        currentPage:
+          type: integer
+          description: Current page number (0-indexed)
+        pageSize:
+          type: integer
+          description: Number of items per page
+
+    TransactionType:
+      type: string
+      enum:
+        - DEPOSIT
+        - WITHDRAWAL
+        - BET
+        - WIN
+        - REFUND
+        - BONUS
+      description: Type of transaction
+
+    TransactionStatus:
+      type: string
+      enum:
+        - PENDING
+        - COMPLETED
+        - FAILED
+        - CANCELLED
+      description: Transaction status
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+        - timestamp
+      properties:
+        error:
+          type: string
+          description: Error code
+          example: INSUFFICIENT_FUNDS
+        message:
+          type: string
+          description: Error message
+          example: Insufficient funds for withdrawal
+        timestamp:
+          type: string
+          format: date-time
+          description: Error timestamp
+        path:
+          type: string
+          description: Request path
+          example: /api/v1/balance/user-123/withdraw
