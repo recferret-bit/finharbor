@@ -1,0 +1,350 @@
+openapi: 3.0.3
+info:
+  title: User Service API
+  version: 1.0.0
+  description: |
+    Casino Backend - Users Service API
+    
+    This service manages user accounts, profiles, and authentication data.
+    
+    **Owned by:** Core Team
+    
+    **Consumers:**
+    - Retail Team (checkout-service, cart-service)
+    - AML Team (transaction-monitor-service)
+    - Redesign Team (frontend web app)
+  contact:
+    name: Core Team
+    email: core-team@casino.example.com
+
+servers:
+  - url: https://api.example.com/v1
+    description: Production
+  - url: https://api-staging.example.com/v1
+    description: Staging
+  - url: http://localhost:8080/v1
+    description: Local Development
+
+tags:
+  - name: Users
+    description: User management operations
+
+paths:
+  /users:
+    get:
+      tags:
+        - Users
+      summary: List users
+      description: Retrieve a paginated list of users
+      operationId: listUsers
+      parameters:
+        - name: page
+          in: query
+          description: Page number (0-indexed)
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: size
+          in: query
+          description: Page size
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: email
+          in: query
+          description: Filter by email
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+    post:
+      tags:
+        - Users
+      summary: Create user
+      description: Create a new user account
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /users/{userId}:
+    get:
+      tags:
+        - Users
+      summary: Get user by ID
+      description: Retrieve a user by their unique identifier
+      operationId: getUserById
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: User unique identifier
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+    put:
+      tags:
+        - Users
+      summary: Update user
+      description: Update an existing user
+      operationId: updateUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: User unique identifier
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+    delete:
+      tags:
+        - Users
+      summary: Delete user
+      description: Delete a user account
+      operationId: deleteUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: User unique identifier
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: User deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    User:
+      type: object
+      required:
+        - id
+        - email
+        - username
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: User unique identifier
+        email:
+          type: string
+          format: email
+          description: User email address
+        username:
+          type: string
+          description: Username
+          minLength: 3
+          maxLength: 50
+        firstName:
+          type: string
+          description: First name
+          maxLength: 100
+        lastName:
+          type: string
+          description: Last name
+          maxLength: 100
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, SUSPENDED, BANNED]
+          description: User account status
+        kycStatus:
+          type: string
+          enum: [NOT_VERIFIED, PENDING, VERIFIED, REJECTED]
+          description: KYC verification status
+        createdAt:
+          type: string
+          format: date-time
+          description: Account creation timestamp
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+    
+    CreateUserRequest:
+      type: object
+      required:
+        - email
+        - username
+      properties:
+        email:
+          type: string
+          format: email
+          description: User email address
+        username:
+          type: string
+          description: Username
+          minLength: 3
+          maxLength: 50
+        firstName:
+          type: string
+          description: First name
+          maxLength: 100
+        lastName:
+          type: string
+          description: Last name
+          maxLength: 100
+        password:
+          type: string
+          format: password
+          description: User password (min 8 characters)
+          minLength: 8
+    
+    UpdateUserRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          description: First name
+          maxLength: 100
+        lastName:
+          type: string
+          description: Last name
+          maxLength: 100
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, SUSPENDED, BANNED]
+          description: User account status
+        kycStatus:
+          type: string
+          enum: [NOT_VERIFIED, PENDING, VERIFIED, REJECTED]
+          description: KYC verification status
+    
+    UserPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        totalElements:
+          type: integer
+          description: Total number of users
+        totalPages:
+          type: integer
+          description: Total number of pages
+        size:
+          type: integer
+          description: Page size
+        number:
+          type: integer
+          description: Current page number
+        first:
+          type: boolean
+          description: Is first page
+        last:
+          type: boolean
+          description: Is last page
+    
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Error message
+        timestamp:
+          type: string
+          format: date-time
+          description: Error timestamp
+  
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    Conflict:
+      description: Resource conflict (e.g., duplicate email)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
