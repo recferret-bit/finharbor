@@ -1,0 +1,373 @@
+openapi: 3.0.3
+info:
+  title: Games Service API
+  description: |
+    Casino Games Microservice API for managing casino games including slots, table games, and live casino.
+    
+    This service provides CRUD operations for game management, game discovery, and filtering capabilities.
+  version: 1.0.0
+  contact:
+    name: Casino Backend Team
+    email: backend@casino.example.com
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.casino.example.com/games-service
+    description: Production server
+
+tags:
+  - name: Games
+    description: Game management operations
+
+paths:
+  /api/v1/games:
+    get:
+      tags:
+        - Games
+      summary: Get all games
+      description: Retrieves all games with optional filtering by type, status, or search query
+      operationId: getAllGames
+      parameters:
+        - name: type
+          in: query
+          description: Filter by game type
+          required: false
+          schema:
+            $ref: '#/components/schemas/GameType'
+        - name: status
+          in: query
+          description: Filter by game status
+          required: false
+          schema:
+            $ref: '#/components/schemas/GameStatus'
+        - name: search
+          in: query
+          description: Search query for name or description
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GameResponse'
+    
+    post:
+      tags:
+        - Games
+      summary: Create a new game
+      description: Creates a new casino game
+      operationId: createGame
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameRequest'
+      responses:
+        '201':
+          description: Game created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameResponse'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Game with gameId already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/games/{id}:
+    get:
+      tags:
+        - Games
+      summary: Get game by ID
+      description: Retrieves a game by its database ID
+      operationId: getGameById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Game database ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Game found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameResponse'
+        '404':
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    put:
+      tags:
+        - Games
+      summary: Update a game
+      description: Updates an existing game
+      operationId: updateGame
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Game database ID
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameRequest'
+      responses:
+        '200':
+          description: Game updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameResponse'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Game with gameId already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    delete:
+      tags:
+        - Games
+      summary: Delete a game
+      description: Deletes a game by its ID
+      operationId: deleteGame
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Game database ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Game deleted successfully
+        '404':
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/games/game-id/{gameId}:
+    get:
+      tags:
+        - Games
+      summary: Get game by gameId
+      description: Retrieves a game by its unique gameId
+      operationId: getGameByGameId
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          description: Unique game identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Game found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameResponse'
+        '404':
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    GameRequest:
+      type: object
+      required:
+        - gameId
+        - name
+        - type
+        - status
+        - minBet
+        - maxBet
+      properties:
+        gameId:
+          type: string
+          maxLength: 100
+          description: Unique game identifier
+          example: "slot-mega-fortune-001"
+        name:
+          type: string
+          maxLength: 255
+          description: Game name
+          example: "Mega Fortune"
+        description:
+          type: string
+          maxLength: 1000
+          description: Game description
+          example: "A progressive jackpot slot game with 5 reels and 20 paylines"
+        type:
+          $ref: '#/components/schemas/GameType'
+        status:
+          $ref: '#/components/schemas/GameStatus'
+        minBet:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Minimum bet amount
+          example: 0.10
+        maxBet:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Maximum bet amount
+          example: 100.00
+        rtp:
+          type: number
+          format: decimal
+          minimum: 0.0
+          maximum: 100.0
+          description: Return to Player percentage
+          example: 96.5
+        provider:
+          type: string
+          maxLength: 255
+          description: Game provider name
+          example: "NetEnt"
+        thumbnailUrl:
+          type: string
+          maxLength: 500
+          description: URL to game thumbnail image
+          example: "https://cdn.casino.example.com/games/mega-fortune-thumb.jpg"
+
+    GameResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Database ID
+          example: 1
+        gameId:
+          type: string
+          description: Unique game identifier
+          example: "slot-mega-fortune-001"
+        name:
+          type: string
+          description: Game name
+          example: "Mega Fortune"
+        description:
+          type: string
+          description: Game description
+          example: "A progressive jackpot slot game with 5 reels and 20 paylines"
+        type:
+          $ref: '#/components/schemas/GameType'
+        status:
+          $ref: '#/components/schemas/GameStatus'
+        minBet:
+          type: number
+          format: decimal
+          description: Minimum bet amount
+          example: 0.10
+        maxBet:
+          type: number
+          format: decimal
+          description: Maximum bet amount
+          example: 100.00
+        rtp:
+          type: number
+          format: decimal
+          description: Return to Player percentage
+          example: 96.5
+        provider:
+          type: string
+          description: Game provider name
+          example: "NetEnt"
+        thumbnailUrl:
+          type: string
+          description: URL to game thumbnail image
+          example: "https://cdn.casino.example.com/games/mega-fortune-thumb.jpg"
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2026-01-31T10:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2026-01-31T10:00:00Z"
+
+    GameType:
+      type: string
+      enum:
+        - SLOT
+        - BLACKJACK
+        - ROULETTE
+        - POKER
+        - BACCARAT
+        - CRAPS
+        - BINGO
+        - LOTTERY
+        - LIVE_CASINO
+        - VIRTUAL_SPORTS
+      description: Type of casino game
+
+    GameStatus:
+      type: string
+      enum:
+        - ACTIVE
+        - INACTIVE
+        - MAINTENANCE
+        - COMING_SOON
+      description: Current status of the game
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Error message
+          example: "Game not found with id: 123"
+        timestamp:
+          type: string
+          format: date-time
+          description: Error timestamp
+          example: "2026-01-31T10:00:00Z"
