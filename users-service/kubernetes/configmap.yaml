@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: users-service-config
+  labels:
+    app: users-service
+    team: core
+data:
+  application.yml: |
+    spring:
+      application:
+        name: users-service
+      jpa:
+        hibernate:
+          ddl-auto: validate
+        show-sql: false
+      kafka:
+        bootstrap-servers: kafka:9092
+    server:
+      port: 8080
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health,info,metrics,prometheus
+    logging:
+      level:
+        com.casino.users: INFO
